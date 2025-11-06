@@ -1,0 +1,10 @@
+{
+  "buildCommand": "npm run build",
+  "devCommand": "npm run dev",
+  "installCommand": "npm install --legacy-peer-deps",
+  "framework": "nextjs",
+  "env": {
+    "NOTION_API_KEY": "@notion-api-key",
+    "NOTION_DATABASE_ID": "@notion-database-id"
+  }
+}
