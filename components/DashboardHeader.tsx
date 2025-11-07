@@ -11,37 +11,7 @@ export default function DashboardHeader() {
   const notionDbUrl = dbIdPublic ? `https://www.notion.so/${dbIdPublic.replace(/-/g, '')}` : undefined;
 
   const handleNewTask = async () => {
-    // Try creating in Notion via API first
-    try {
-      const res = await fetch('/api/tasks', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: 'New Task',
-          status: 'To Do',
-          weekday: 'No Weekdays',
-          todoItems: [],
-        }),
-        cache: 'no-store',
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        const created = data.task;
-        addTask(created);
-        setSelectedTask(created);
-        setIsModalOpen(true);
-        return;
-      } else {
-        const err = await res.json().catch(() => ({}));
-  alert(`Failed to create task in Notion: ${err.error || res.status} (Check server logs)`);
-      }
-    } catch (e) {
-      console.error('Failed to create task via API, falling back to local temp task', e);
-      alert('Failed to create task in Notion. Check server logs and env variables. Using a local temp task.');
-    }
-
-    // Fallback: local temp task
+    // Always create a local draft first; no server call until user submits
     const tempTask = {
       id: `temp-${Date.now()}`,
       title: 'New Task',

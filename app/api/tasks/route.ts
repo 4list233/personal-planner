@@ -7,10 +7,18 @@ import { fetchTasksFromNotion, createTaskInNotion } from '@/lib/notion';
 // Ensure Node.js runtime for Notion SDK compatibility on Vercel
 export const runtime = 'nodejs';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const url = new URL(request.url);
+  const debug = url.searchParams.get('debug') === '1';
   try {
     const tasks = await fetchTasksFromNotion();
-    return NextResponse.json({ tasks, success: true });
+    if (!debug) {
+      return NextResponse.json({ tasks, success: true });
+    }
+
+    // For debug mode, also include raw property keys & counts for first 5 pages
+    const rawSummary = tasks.slice(0, 5).map(t => ({ id: t.id, title: t.title, dueDate: t.dueDate, status: t.status, weekday: t.weekday }));
+    return NextResponse.json({ tasks, success: true, debug: { count: tasks.length, sample: rawSummary } });
   } catch (error) {
     console.error('Error fetching tasks:', error);
     return NextResponse.json(

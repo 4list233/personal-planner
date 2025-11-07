@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react';
 import { TaskStatus, Weekday, TodoItem } from '@/lib/types';
 
 export default function TaskModal() {
-  const { selectedTask, isModalOpen, setIsModalOpen, updateTask, deleteTask } = usePlannerStore();
+  const { selectedTask, isModalOpen, setIsModalOpen, updateTask, deleteTask, submitTask } = usePlannerStore();
   const [editingTitle, setEditingTitle] = useState(false);
   const [newTodoText, setNewTodoText] = useState('');
   const [isNewTask, setIsNewTask] = useState(false);
@@ -30,7 +30,9 @@ export default function TaskModal() {
     setIsModalOpen(false);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    if (!selectedTask) return;
+    await submitTask(selectedTask.id);
     setIsModalOpen(false);
   };
 
@@ -331,23 +333,21 @@ export default function TaskModal() {
           </div>
         </div>
 
-        {/* Footer with Save button for new tasks */}
-        {isNewTask && (
-          <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 px-6 py-4 flex items-center justify-end gap-3">
-            <button
-              onClick={handleClose}
-              className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-200 rounded-lg transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleSave}
-              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
-            >
-              Add Task
-            </button>
-          </div>
-        )}
+        {/* Footer with persistent Submit button */}
+        <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 px-6 py-4 flex items-center justify-end gap-3">
+          <button
+            onClick={handleClose}
+            className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-200 rounded-lg transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+          >
+            Submit
+          </button>
+        </div>
       </div>
     </div>
   );

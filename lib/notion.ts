@@ -35,35 +35,105 @@ function getNotionClient() {
  */
 export async function fetchTasksFromNotion(): Promise<Task[]> {
   const notion = getNotionClient();
-  
+
   if (!notion) {
-    console.warn('Notion not configured - using mock data');
+    console.warn('Notion not configured - returning empty task list');
     return [];
   }
-  
+
+  // Prefer database query for complete results with pagination
   try {
-    // Use search API instead of databases.query for SDK v5.x
-    const response = await notion.client.search({
-      filter: {
-        property: 'object',
-        value: 'page',
-      },
-      sort: {
-        direction: 'descending',
-        timestamp: 'last_edited_time',
-      },
-    });
-    
-    // Filter to only pages from our database
-    const pages = response.results.filter((page: any) => 
-      page.parent?.type === 'database_id' && 
-      page.parent?.database_id === notion.databaseId
-    );
-    
-    return pages.map(notionPageToTask);
-  } catch (error) {
-    console.error('Error fetching tasks from Notion:', error);
-    return [];
+    const tasks: Task[] = [];
+    let hasMore = true;
+    let startCursor: string | undefined = undefined;
+
+    while (hasMore) {
+      // @ts-ignore types sometimes lag; runtime supports databases.query
+      const resp: any = await notion.client.databases.query({
+        database_id: notion.databaseId,
+        page_size: 100,
+        start_cursor: startCursor,
+        sorts: [
+          { timestamp: 'last_edited_time', direction: 'descending' as const },
+        ],
+      });
+
+      const pageResults: any[] = resp.results || [];
+      for (const page of pageResults) {
+        tasks.push(notionPageToTask(page));
+      }
+
+      hasMore = resp.has_more === true;
+      startCursor = resp.next_cursor || undefined;
+    }
+
+    return tasks;
+  } catch (err) {
+    console.warn('databases.query failed, attempting REST fallback:', err);
+    // Fallback 1: call REST API directly to query the database (avoids SDK quirk)
+    try {
+      const tasks: Task[] = [];
+      let startCursor: string | undefined = undefined;
+      let hasMore = true;
+
+      const token = (process.env.NOTION_API_KEY || '').trim();
+      const dbid = notion.databaseId;
+
+      while (hasMore) {
+        const res = await fetch(`https://api.notion.com/v1/databases/${dbid}/query`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Notion-Version': '2022-06-28',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ page_size: 100, start_cursor: startCursor }),
+        });
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(`REST databases.query failed: ${res.status} ${res.statusText} - ${text}`);
+        }
+        const json: any = await res.json();
+        const results: any[] = json.results || [];
+        for (const page of results) {
+          tasks.push(notionPageToTask(page));
+        }
+        hasMore = json.has_more === true;
+        startCursor = json.next_cursor || undefined;
+      }
+
+      return tasks;
+    } catch (restErr) {
+      console.warn('REST databases.query failed, falling back to search():', restErr);
+    }
+
+    // Fallback 2: search API with pagination and filter by parent database id
+    try {
+      const tasks: Task[] = [];
+      let startCursor: string | undefined = undefined;
+      let hasMore = true;
+
+      while (hasMore) {
+        const response: any = await notion.client.search({
+          filter: { property: 'object', value: 'page' },
+          sort: { direction: 'descending', timestamp: 'last_edited_time' },
+          page_size: 100,
+          start_cursor: startCursor,
+        } as any);
+        const pages = (response.results as any[]).filter(
+          (page: any) =>
+            page.parent?.type === 'database_id' &&
+            page.parent?.database_id === notion.databaseId
+        );
+        for (const page of pages) tasks.push(notionPageToTask(page));
+        hasMore = response.has_more === true;
+        startCursor = response.next_cursor || undefined;
+      }
+      return tasks;
+    } catch (error) {
+      console.error('Error fetching tasks from Notion:', error);
+      return [];
+    }
   }
 }
 
@@ -141,30 +211,52 @@ export async function deleteTaskInNotion(taskId: string): Promise<void> {
  * Convert Notion page to Task object
  */
 function notionPageToTask(page: any): Task {
-  const properties = page.properties;
-  
-  // Parse todos from rich text or relation field
+  const props = page.properties || {};
+
+  // Heuristics to find common fields even if property names differ
+  const titleProp = findFirstPropOfType(props, 'title');
+  const statusProp = props['Status'] || findFirstPropOfType(props, 'select');
+  const dueProp = props['Due Date'] || props['Due'] || findFirstPropOfType(props, 'date');
+  const weekdayProp = props['Weekdays'] || props['Weekday'] || undefined;
+  const todosProp = props['Todos'] || props['To-dos'] || findFirstPropOfType(props, 'rich_text');
+
+  // Parse todos from first rich_text block as newline-separated list if present
   let todos: TodoItem[] = [];
-  if (properties.Todos?.rich_text) {
-    // If stored as comma-separated text
-    const todosText = properties.Todos.rich_text[0]?.plain_text || '';
-    todos = todosText.split('\n').filter(Boolean).map((text: string, index: number) => ({
-      id: `${page.id}-todo-${index}`,
-      text: text.replace(/^[\-\*✓]\s*/, ''),
-      completed: text.startsWith('✓'),
-    }));
+  const todosText = todosProp?.rich_text?.[0]?.plain_text || '';
+  if (todosText) {
+    todos = todosText
+      .split('\n')
+      .filter(Boolean)
+      .map((text: string, index: number) => ({
+        id: `${page.id}-todo-${index}`,
+        text: text.replace(/^[\-\*✓]\s*/, ''),
+        completed: text.trim().startsWith('✓'),
+      }));
   }
-  
+
+  const title = titleProp?.title?.[0]?.plain_text || 'Untitled';
+  const dueDate = dueProp?.date?.start as string | undefined;
+  const status = (statusProp?.select?.name as TaskStatus) || 'To Do';
+  const weekday = (weekdayProp?.select?.name as Weekday) || 'No Weekdays';
+
   return {
     id: page.id,
-    title: properties.Name?.title[0]?.plain_text || 'Untitled',
-    dueDate: properties['Due Date']?.date?.start,
+    title,
+    dueDate,
     dateCreated: page.created_time,
-    status: (properties.Status?.select?.name as TaskStatus) || 'To Do',
-    weekday: properties.Weekdays?.select?.name as Weekday,
-    daysUntilDue: calculateDaysUntilDue(properties['Due Date']?.date?.start),
+    status,
+    weekday,
+    daysUntilDue: calculateDaysUntilDue(dueDate),
     todoItems: todos,
   };
+}
+
+function findFirstPropOfType(properties: any, type: 'title' | 'select' | 'date' | 'rich_text') {
+  for (const key of Object.keys(properties)) {
+    const p = properties[key];
+    if (p?.type === type) return p;
+  }
+  return undefined;
 }
 
 /**

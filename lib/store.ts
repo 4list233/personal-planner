@@ -19,9 +19,10 @@ interface PlannerStore {
   selectedTask: Task | null;
   isModalOpen: boolean;
   setTasks: (tasks: Task[]) => void;
-  addTask: (task: Task) => Promise<void> | void;
-  updateTask: (id: string, updates: Partial<Task>) => Promise<void> | void;
+  addTask: (task: Task) => void;
+  updateTask: (id: string, updates: Partial<Task>) => void;
   deleteTask: (id: string) => Promise<void> | void;
+  submitTask: (id: string) => Promise<void>;
   setCurrentView: (view: ViewType) => void;
   setSelectedTask: (task: Task | null) => void;
   setIsModalOpen: (isOpen: boolean) => void;
@@ -33,41 +34,11 @@ export const usePlannerStore = create<PlannerStore>((set, get) => ({
   selectedTask: null,
   isModalOpen: false,
   setTasks: (tasks) => set({ tasks }),
-  addTask: async (task) => {
-    // Optimistic add
+  addTask: (task) => {
+    // Local-only add (drafts allowed). Persistence happens on submitTask.
     set((state) => ({ tasks: [...state.tasks, task] }));
-
-    // If this is a temporary task, attempt to persist via API and replace it
-    if (task.id.startsWith('temp-')) {
-      try {
-        const res = await fetch('/api/tasks', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            title: task.title,
-            dueDate: task.dueDate,
-            status: task.status,
-            weekday: task.weekday,
-            todoItems: task.todoItems || [],
-          }),
-        });
-        if (res.ok) {
-          const data = await res.json();
-          const created: Task = data.task;
-          // Replace temp with created
-          set((state) => ({
-            tasks: state.tasks.map((t) => (t.id === task.id ? created : t)),
-            selectedTask: state.selectedTask?.id === task.id ? created : state.selectedTask,
-          }));
-        } else {
-          console.error('Failed to persist new task:', await res.text());
-        }
-      } catch (e) {
-        console.error('Failed to persist new task:', e);
-      }
-    }
   },
-  updateTask: async (id, updates) => {
+  updateTask: (id, updates) => {
     // If dueDate is being updated, recalculate daysUntilDue
     const enhancedUpdates: Partial<Task> = { ...updates };
     if ('dueDate' in updates) {
@@ -85,28 +56,64 @@ export const usePlannerStore = create<PlannerStore>((set, get) => ({
           : state.selectedTask;
       return { tasks: updatedTasks, selectedTask: updatedSelectedTask };
     });
+  },
+  submitTask: async (id) => {
+    const state = get();
+    const task = state.tasks.find((t) => t.id === id);
+    if (!task) return;
 
-    // Persist to server if not a temp id
-    if (!id.startsWith('temp-')) {
-      try {
-        const res = await fetch(`/api/tasks/${id}`, {
-          method: 'PUT',
+    try {
+      if (id.startsWith('temp-')) {
+        // Create on server
+        const res = await fetch('/api/tasks', {
+          method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(enhancedUpdates),
+          body: JSON.stringify({
+            title: task.title,
+            dueDate: task.dueDate,
+            status: task.status,
+            weekday: task.weekday,
+            todoItems: task.todoItems || [],
+          }),
         });
-        if (res.ok) {
-          const data = await res.json();
-          const updated: Task = data.task;
-          set((state) => ({
-            tasks: state.tasks.map((t) => (t.id === id ? updated : t)),
-            selectedTask: state.selectedTask?.id === id ? updated : state.selectedTask,
-          }));
-        } else {
-          console.error('Failed to sync update:', await res.text());
+        if (!res.ok) throw new Error(await res.text());
+        const data = await res.json();
+        const created: Task = data.task;
+        set({
+          tasks: state.tasks.map((t) => (t.id === id ? created : t)),
+          selectedTask: state.selectedTask?.id === id ? created : state.selectedTask,
+        });
+      } else {
+        // Update on server (send full task to avoid partial conflicts)
+        const { id: _omit, ...payload } = task as any;
+        // Basic retry to mitigate transient 409 conflicts
+        let attempt = 0;
+        let lastErr: any = null;
+        let updated: Task | null = null;
+        while (attempt < 3 && !updated) {
+          try {
+            const res = await fetch(`/api/tasks/${id}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload),
+            });
+            if (!res.ok) throw new Error(await res.text());
+            const data = await res.json();
+            updated = data.task as Task;
+          } catch (err) {
+            lastErr = err;
+            attempt += 1;
+            if (attempt < 3) await new Promise(r => setTimeout(r, 200 * attempt));
+          }
         }
-      } catch (e) {
-        console.error('Failed to sync update:', e);
+        if (!updated) throw lastErr || new Error('Failed to update task');
+        set({
+          tasks: state.tasks.map((t) => (t.id === id ? updated! : t)),
+          selectedTask: state.selectedTask?.id === id ? updated! : state.selectedTask,
+        });
       }
+    } catch (e) {
+      console.error('Failed to submit task:', e);
     }
   },
   deleteTask: async (id) => {
