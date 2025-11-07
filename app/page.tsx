@@ -3,8 +3,6 @@
 import { useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { usePlannerStore } from '@/lib/store';
-import { mockTasks } from '@/lib/mock-data';
-import { fetchTasksFromNotion } from '@/lib/notion';
 import DashboardHeader from '@/components/DashboardHeader';
 
 // Lazy load views to avoid compilation hang
@@ -21,20 +19,17 @@ export default function Home() {
   useEffect(() => {
     setMounted(true);
     
-    // Try to fetch from Notion, fallback to mock data
     const loadTasks = async () => {
       try {
-        const notionTasks = await fetchTasksFromNotion();
-        if (notionTasks && notionTasks.length > 0) {
-          console.log('✅ Loaded tasks from Notion:', notionTasks.length);
-          setTasks(notionTasks);
-        } else {
-          console.log('📝 Using mock data (Notion returned no tasks)');
-          setTasks(mockTasks);
-        }
+        const res = await fetch('/api/tasks', { cache: 'no-store' });
+        if (!res.ok) throw new Error(await res.text());
+        const data = await res.json();
+        const tasks = Array.isArray(data.tasks) ? data.tasks : [];
+        console.log(`✅ Loaded ${tasks.length} task(s) from Notion via API`);
+        setTasks(tasks);
       } catch (error) {
-        console.error('❌ Failed to load from Notion, using mock data:', error);
-        setTasks(mockTasks);
+        console.error('❌ Failed to load tasks from API:', error);
+        setTasks([]);
       } finally {
         setLoading(false);
       }

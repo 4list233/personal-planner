@@ -217,3 +217,8 @@ If you encounter issues:
   - `addTask` will POST when a temp task is created and replace it with the created Notion task.
   - `updateTask` will PUT to `/api/tasks/[id]` and reconcile the returned task.
   - `deleteTask` will DELETE and keep the UI updated (optimistic remove).
+
+### Mock Data Removal (2025-11-07)
+- Removed all hardcoded tasks from `lib/mock-data.ts` (now exports an empty array).
+- `app/page.tsx` no longer falls back to mock data; empty Notion DB shows an empty planner instead of seeded items.
+- Ensures production always reflects actual Notion content only.
