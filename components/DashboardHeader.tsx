@@ -31,9 +31,13 @@ export default function DashboardHeader() {
         setSelectedTask(created);
         setIsModalOpen(true);
         return;
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert(`Failed to create task in Notion: ${err.error || res.statusText}`);
       }
     } catch (e) {
       console.error('Failed to create task via API, falling back to local temp task', e);
+      alert('Failed to create task in Notion. Check server logs and env variables. Using a local temp task.');
     }
 
     // Fallback: local temp task

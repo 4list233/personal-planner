@@ -21,6 +21,19 @@ export async function GET() {
 // Creates a new task in Notion database
 export async function POST(request: NextRequest) {
   try {
+    const HAS_KEY = !!process.env.NOTION_API_KEY && process.env.NOTION_API_KEY !== 'placeholder_key';
+    const HAS_DB = !!process.env.NOTION_DATABASE_ID && process.env.NOTION_DATABASE_ID !== 'placeholder_id';
+    if (!HAS_KEY || !HAS_DB) {
+      const msg = 'Notion not configured on server. Ensure NOTION_API_KEY and NOTION_DATABASE_ID are set and restart.';
+      // Include minimal debug info in development only, masking secrets
+      const debug = process.env.NODE_ENV !== 'production' ? {
+        HAS_KEY,
+        HAS_DB,
+        DATABASE_ID: (process.env.NOTION_DATABASE_ID || '').slice(0, 6) + '…',
+      } : undefined;
+      return NextResponse.json({ error: msg, success: false, debug }, { status: 500 });
+    }
+
     const body = await request.json();
     const now = new Date();
 
@@ -39,8 +52,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ task: newTask, success: true });
   } catch (error) {
     console.error('Error creating task:', error);
+    const message = (error as any)?.message || 'Failed to create task';
+    const code = (error as any)?.code;
     return NextResponse.json(
-      { error: 'Failed to create task', success: false },
+      { error: message, code, success: false },
       { status: 500 }
     );
   }
