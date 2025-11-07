@@ -2,39 +2,56 @@
 import { Client } from '@notionhq/client';
 import { Task, TaskStatus, Weekday, TodoItem } from './types';
 
-// Initialize Notion client only if credentials are provided
-const NOTION_API_KEY = process.env.NOTION_API_KEY || '';
-const DATABASE_ID = process.env.NOTION_DATABASE_ID || '';
-
-const isNotionConfigured = NOTION_API_KEY && DATABASE_ID && 
-  NOTION_API_KEY !== 'placeholder_key' && 
-  DATABASE_ID !== 'placeholder_id';
-
-export const notion = isNotionConfigured ? new Client({
-  auth: NOTION_API_KEY,
-}) : null;
+// Lazy initialization - check each time
+function getNotionClient() {
+  const NOTION_API_KEY = process.env.NOTION_API_KEY || '';
+  const DATABASE_ID = process.env.NOTION_DATABASE_ID || '';
+  
+  const isConfigured = NOTION_API_KEY && DATABASE_ID && 
+    NOTION_API_KEY !== 'placeholder_key' && 
+    DATABASE_ID !== 'placeholder_id';
+  
+  if (!isConfigured) {
+    return null;
+  }
+  
+  return {
+    client: new Client({ auth: NOTION_API_KEY }),
+    databaseId: DATABASE_ID,
+  };
+}
 
 /**
  * Fetch all tasks from Notion database
  */
 export async function fetchTasksFromNotion(): Promise<Task[]> {
-  if (!isNotionConfigured || !notion) {
+  const notion = getNotionClient();
+  
+  if (!notion) {
     console.warn('Notion not configured - using mock data');
     return [];
   }
   
   try {
-    const response = await notion.databases.query({
-      database_id: DATABASE_ID,
-      sorts: [
-        {
-          property: 'Due Date',
-          direction: 'ascending',
-        },
-      ],
+    // Use search API instead of databases.query for SDK v5.x
+    const response = await notion.client.search({
+      filter: {
+        property: 'object',
+        value: 'page',
+      },
+      sort: {
+        direction: 'descending',
+        timestamp: 'last_edited_time',
+      },
     });
     
-    return response.results.map(notionPageToTask);
+    // Filter to only pages from our database
+    const pages = response.results.filter((page: any) => 
+      page.parent?.type === 'database_id' && 
+      page.parent?.database_id === notion.databaseId
+    );
+    
+    return pages.map(notionPageToTask);
   } catch (error) {
     console.error('Error fetching tasks from Notion:', error);
     return [];
@@ -45,13 +62,15 @@ export async function fetchTasksFromNotion(): Promise<Task[]> {
  * Create a new task in Notion
  */
 export async function createTaskInNotion(task: Omit<Task, 'id'>): Promise<Task> {
-  if (!isNotionConfigured || !notion) {
+  const notion = getNotionClient();
+  
+  if (!notion) {
     throw new Error('Notion not configured');
   }
   
   try {
-    const response = await notion.pages.create({
-      parent: { database_id: DATABASE_ID },
+    const response = await notion.client.pages.create({
+      parent: { database_id: notion.databaseId },
       properties: taskToNotionProperties(task),
     });
     
@@ -69,12 +88,14 @@ export async function updateTaskInNotion(
   taskId: string,
   updates: Partial<Task>
 ): Promise<Task> {
-  if (!isNotionConfigured || !notion) {
+  const notion = getNotionClient();
+  
+  if (!notion) {
     throw new Error('Notion not configured');
   }
   
   try {
-    const response = await notion.pages.update({
+    const response = await notion.client.pages.update({
       page_id: taskId,
       properties: taskToNotionProperties(updates),
     });
@@ -90,12 +111,14 @@ export async function updateTaskInNotion(
  * Delete a task from Notion (archive it)
  */
 export async function deleteTaskInNotion(taskId: string): Promise<void> {
-  if (!isNotionConfigured || !notion) {
+  const notion = getNotionClient();
+  
+  if (!notion) {
     throw new Error('Notion not configured');
   }
   
   try {
-    await notion.pages.update({
+    await notion.client.pages.update({
       page_id: taskId,
       archived: true,
     });
@@ -116,10 +139,10 @@ function notionPageToTask(page: any): Task {
   if (properties.Todos?.rich_text) {
     // If stored as comma-separated text
     const todosText = properties.Todos.rich_text[0]?.plain_text || '';
-    todos = todosText.split('\n').filter(Boolean).map((text, index) => ({
+    todos = todosText.split('\n').filter(Boolean).map((text: string, index: number) => ({
       id: `${page.id}-todo-${index}`,
-      text: text.replace(/^[\-\*]\s*/, ''),
-      completed: false,
+      text: text.replace(/^[\-\*✓]\s*/, ''),
+      completed: text.startsWith('✓'),
     }));
   }
   
@@ -131,7 +154,7 @@ function notionPageToTask(page: any): Task {
     status: (properties.Status?.select?.name as TaskStatus) || 'To Do',
     weekday: properties.Weekdays?.select?.name as Weekday,
     daysUntilDue: calculateDaysUntilDue(properties['Due Date']?.date?.start),
-    todos,
+    todoItems: todos,
   };
 }
 
@@ -165,9 +188,9 @@ function taskToNotionProperties(task: Partial<Task>) {
     };
   }
   
-  if (task.todos !== undefined) {
+  if (task.todoItems !== undefined) {
     // Store todos as newline-separated text
-    const todosText = task.todos.map(t => `${t.completed ? '✓' : '-'} ${t.text}`).join('\n');
+    const todosText = task.todoItems.map(t => `${t.completed ? '✓' : '-'} ${t.text}`).join('\n');
     properties.Todos = {
       rich_text: [{ text: { content: todosText } }],
     };

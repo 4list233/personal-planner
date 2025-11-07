@@ -7,27 +7,56 @@ import { useEffect, useState } from 'react';
 import { TaskStatus, Weekday, TodoItem } from '@/lib/types';
 
 export default function TaskModal() {
-  const { selectedTask, isModalOpen, setIsModalOpen, updateTask } = usePlannerStore();
+  const { selectedTask, isModalOpen, setIsModalOpen, updateTask, deleteTask } = usePlannerStore();
   const [editingTitle, setEditingTitle] = useState(false);
   const [newTodoText, setNewTodoText] = useState('');
+  const [isNewTask, setIsNewTask] = useState(false);
 
   useEffect(() => {
-    const handleEscape = (e: KeyboardEvent) => {
+    // Check if this is a new task (has temp ID and default title)
+    if (selectedTask?.id.startsWith('temp-') && selectedTask?.title === 'New Task') {
+      setIsNewTask(true);
+      setEditingTitle(true); // Auto-focus title for new tasks
+    } else {
+      setIsNewTask(false);
+    }
+  }, [selectedTask]);
+
+  const handleClose = () => {
+    // If it's a new task that hasn't been edited, remove it
+    if (isNewTask && selectedTask?.title === 'New Task') {
+      deleteTask(selectedTask.id);
+    }
+    setIsModalOpen(false);
+  };
+
+  const handleSave = () => {
+    setIsModalOpen(false);
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        setIsModalOpen(false);
+        handleClose();
+      }
+      
+      // Only trigger on Command+Enter or Ctrl+Enter to avoid conflicts with input fields
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && isNewTask) {
+        e.preventDefault();
+        handleSave();
       }
     };
 
     if (isModalOpen) {
-      document.addEventListener('keydown', handleEscape);
+      document.addEventListener('keydown', handleKeyDown);
       document.body.style.overflow = 'hidden';
     }
 
     return () => {
-      document.removeEventListener('keydown', handleEscape);
+      document.removeEventListener('keydown', handleKeyDown);
       document.body.style.overflow = 'unset';
     };
-  }, [isModalOpen, setIsModalOpen]);
+  }, [isModalOpen, isNewTask]);
 
   if (!isModalOpen || !selectedTask) return null;
 
@@ -80,7 +109,7 @@ export default function TaskModal() {
   return (
     <div
       className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
-      onClick={() => setIsModalOpen(false)}
+      onClick={handleClose}
     >
       <div
         className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
@@ -94,6 +123,11 @@ export default function TaskModal() {
               value={selectedTask.title}
               onChange={(e) => updateTask(selectedTask.id, { title: e.target.value })}
               onBlur={() => setEditingTitle(false)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  setEditingTitle(false);
+                }
+              }}
               autoFocus
               className="text-xl font-semibold text-gray-900 border-b-2 border-blue-500 focus:outline-none flex-1"
             />
@@ -106,7 +140,7 @@ export default function TaskModal() {
             </h2>
           )}
           <button
-            onClick={() => setIsModalOpen(false)}
+            onClick={handleClose}
             className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
           >
             <X size={20} className="text-gray-500" />
@@ -191,11 +225,6 @@ export default function TaskModal() {
                 </select>
               </div>
             </div>
-
-            <button className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-2">
-              <Plus size={16} />
-              Add a property
-            </button>
           </div>
 
           {/* Comments */}
@@ -280,10 +309,45 @@ export default function TaskModal() {
                   placeholder="Add a to-do item..."
                   className="flex-1 text-sm text-gray-500 bg-transparent border-b border-gray-200 hover:border-gray-300 focus:border-blue-500 focus:outline-none px-1"
                 />
+                <button
+                  onClick={() => {
+                    if (newTodoText.trim()) {
+                      const newTodo: TodoItem = {
+                        id: `todo-${Date.now()}`,
+                        text: newTodoText,
+                        completed: false,
+                      };
+                      const updatedTodos = [...(selectedTask.todoItems || []), newTodo];
+                      updateTask(selectedTask.id, { todoItems: updatedTodos });
+                      setNewTodoText('');
+                    }
+                  }}
+                  className="text-sm text-blue-600 hover:text-blue-700 font-medium px-3 py-1 rounded hover:bg-blue-50 transition-colors"
+                >
+                  Add
+                </button>
               </div>
             </div>
           </div>
         </div>
+
+        {/* Footer with Save button for new tasks */}
+        {isNewTask && (
+          <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 px-6 py-4 flex items-center justify-end gap-3">
+            <button
+              onClick={handleClose}
+              className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-200 rounded-lg transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSave}
+              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+            >
+              Add Task
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
