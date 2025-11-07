@@ -4,20 +4,29 @@ import { Task, TaskStatus, Weekday, TodoItem } from './types';
 
 // Lazy initialization - check each time
 function getNotionClient() {
-  const NOTION_API_KEY = process.env.NOTION_API_KEY || '';
-  const DATABASE_ID = process.env.NOTION_DATABASE_ID || '';
-  
-  const isConfigured = NOTION_API_KEY && DATABASE_ID && 
-    NOTION_API_KEY !== 'placeholder_key' && 
-    DATABASE_ID !== 'placeholder_id';
-  
+  const RAW_KEY = (process.env.NOTION_API_KEY || '').trim();
+  const RAW_DB = (process.env.NOTION_DATABASE_ID || '').trim();
+
+  const isConfigured = RAW_KEY && RAW_DB &&
+    RAW_KEY !== 'placeholder_key' &&
+    RAW_DB !== 'placeholder_id';
+
   if (!isConfigured) {
     return null;
   }
-  
+
+  // Basic validation to avoid invalid Authorization header values on Vercel
+  if (/\s/.test(RAW_KEY)) {
+    throw new Error('NOTION_API_KEY appears invalid (contains whitespace). Ensure it is the exact integration token starting with "ntn_".');
+  }
+  if (!RAW_KEY.startsWith('ntn_')) {
+    // Not fatal, but warn for visibility
+    console.warn('NOTION_API_KEY does not start with "ntn_". Verify the correct token is set.');
+  }
+
   return {
-    client: new Client({ auth: NOTION_API_KEY }),
-    databaseId: DATABASE_ID,
+    client: new Client({ auth: RAW_KEY }),
+    databaseId: RAW_DB,
   };
 }
 
