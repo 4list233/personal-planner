@@ -5,7 +5,25 @@ import ViewSwitcher from './ViewSwitcher';
 import { Filter, ArrowUpDown, Search, Plus } from 'lucide-react';
 
 export default function DashboardHeader() {
-  const { currentView, setCurrentView } = usePlannerStore();
+  const { currentView, setCurrentView, addTask, setSelectedTask, setIsModalOpen } = usePlannerStore();
+
+  const handleNewTask = () => {
+    // Create a new empty task
+    const newTask = {
+      id: `temp-${Date.now()}`,
+      title: 'New Task',
+      dueDate: new Date().toISOString().split('T')[0],
+      dateCreated: new Date().toISOString(),
+      status: 'To Do' as const,
+      weekday: 'No Weekdays' as const,
+      daysUntilDue: 0,
+      todos: [],
+    };
+    
+    addTask(newTask);
+    setSelectedTask(newTask);
+    setIsModalOpen(true);
+  };
 
   return (
     <div className="border-b border-gray-200 bg-white">
@@ -17,7 +35,10 @@ export default function DashboardHeader() {
             </h1>
             <p className="text-sm text-gray-500 mt-1">Forest's Personal Planner 😁</p>
           </div>
-          <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm">
+          <button 
+            onClick={handleNewTask}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm"
+          >
             <Plus size={16} />
             New
           </button>
