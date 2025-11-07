@@ -4,6 +4,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchTasksFromNotion, createTaskInNotion } from '@/lib/notion';
 
+// Ensure Node.js runtime for Notion SDK compatibility on Vercel
+export const runtime = 'nodejs';
+
 export async function GET() {
   try {
     const tasks = await fetchTasksFromNotion();

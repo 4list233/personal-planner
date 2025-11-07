@@ -22,6 +22,7 @@ export default function DashboardHeader() {
           weekday: 'No Weekdays',
           todoItems: [],
         }),
+        cache: 'no-store',
       });
 
       if (res.ok) {
@@ -33,7 +34,7 @@ export default function DashboardHeader() {
         return;
       } else {
         const err = await res.json().catch(() => ({}));
-        alert(`Failed to create task in Notion: ${err.error || res.statusText}`);
+  alert(`Failed to create task in Notion: ${err.error || res.status} (Check server logs)`);
       }
     } catch (e) {
       console.error('Failed to create task via API, falling back to local temp task', e);

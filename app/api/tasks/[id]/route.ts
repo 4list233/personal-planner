@@ -3,6 +3,9 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { updateTaskInNotion, deleteTaskInNotion } from '@/lib/notion';
+
+// Ensure Node.js runtime for Notion SDK compatibility on Vercel
+export const runtime = 'nodejs';
 // import { updateTaskInNotion, deleteTaskInNotion } from '@/lib/notion';
 
 export async function GET(
