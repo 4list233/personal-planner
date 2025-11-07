@@ -1,15 +1,15 @@
 // API Route: GET/PUT/DELETE /api/tasks/[id]
 // Handles individual task operations
 
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 // import { updateTaskInNotion, deleteTaskInNotion } from '@/lib/notion';
 
 export async function GET(
-  request: Request,
-  { params }: { params: { id: string } }
+  request: NextRequest,
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = params;
+    const { id } = await context.params;
     
     // TODO: Fetch single task from Notion
     
@@ -27,11 +27,11 @@ export async function GET(
 }
 
 export async function PUT(
-  request: Request,
-  { params }: { params: { id: string } }
+  request: NextRequest,
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = params;
+    const { id } = await context.params;
     const updates = await request.json();
     
     // TODO: Update task in Notion
@@ -51,11 +51,11 @@ export async function PUT(
 }
 
 export async function DELETE(
-  request: Request,
-  { params }: { params: { id: string } }
+  request: NextRequest,
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = params;
+    const { id } = await context.params;
     
     // TODO: Delete (archive) task in Notion
     // await deleteTaskInNotion(id);
