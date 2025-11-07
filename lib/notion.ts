@@ -2,17 +2,27 @@
 import { Client } from '@notionhq/client';
 import { Task, TaskStatus, Weekday, TodoItem } from './types';
 
-// Initialize Notion client
-export const notion = new Client({
-  auth: process.env.NOTION_API_KEY,
-});
-
+// Initialize Notion client only if credentials are provided
+const NOTION_API_KEY = process.env.NOTION_API_KEY || '';
 const DATABASE_ID = process.env.NOTION_DATABASE_ID || '';
+
+const isNotionConfigured = NOTION_API_KEY && DATABASE_ID && 
+  NOTION_API_KEY !== 'placeholder_key' && 
+  DATABASE_ID !== 'placeholder_id';
+
+export const notion = isNotionConfigured ? new Client({
+  auth: NOTION_API_KEY,
+}) : null;
 
 /**
  * Fetch all tasks from Notion database
  */
 export async function fetchTasksFromNotion(): Promise<Task[]> {
+  if (!isNotionConfigured || !notion) {
+    console.warn('Notion not configured - using mock data');
+    return [];
+  }
+  
   try {
     const response = await notion.databases.query({
       database_id: DATABASE_ID,
@@ -27,7 +37,7 @@ export async function fetchTasksFromNotion(): Promise<Task[]> {
     return response.results.map(notionPageToTask);
   } catch (error) {
     console.error('Error fetching tasks from Notion:', error);
-    throw error;
+    return [];
   }
 }
 
@@ -35,6 +45,10 @@ export async function fetchTasksFromNotion(): Promise<Task[]> {
  * Create a new task in Notion
  */
 export async function createTaskInNotion(task: Omit<Task, 'id'>): Promise<Task> {
+  if (!isNotionConfigured || !notion) {
+    throw new Error('Notion not configured');
+  }
+  
   try {
     const response = await notion.pages.create({
       parent: { database_id: DATABASE_ID },
@@ -55,6 +69,10 @@ export async function updateTaskInNotion(
   taskId: string,
   updates: Partial<Task>
 ): Promise<Task> {
+  if (!isNotionConfigured || !notion) {
+    throw new Error('Notion not configured');
+  }
+  
   try {
     const response = await notion.pages.update({
       page_id: taskId,
@@ -72,6 +90,10 @@ export async function updateTaskInNotion(
  * Delete a task from Notion (archive it)
  */
 export async function deleteTaskInNotion(taskId: string): Promise<void> {
+  if (!isNotionConfigured || !notion) {
+    throw new Error('Notion not configured');
+  }
+  
   try {
     await notion.pages.update({
       page_id: taskId,

@@ -117,11 +117,6 @@ function DroppableColumn({ status, color, tasks, isCollapsed, onToggle }: {
             ))}
           </div>
         </SortableContext>
-
-        <button className="w-full mt-3 py-2 text-sm text-gray-500 hover:text-gray-700 hover:bg-white/50 rounded-lg transition-colors flex items-center justify-center gap-2">
-          <Plus size={16} />
-          New page
-        </button>
       </div>
     </div>
   );
