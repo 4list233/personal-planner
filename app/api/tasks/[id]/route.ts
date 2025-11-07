@@ -2,6 +2,7 @@
 // Handles individual task operations
 
 import { NextRequest, NextResponse } from 'next/server';
+import { updateTaskInNotion, deleteTaskInNotion } from '@/lib/notion';
 // import { updateTaskInNotion, deleteTaskInNotion } from '@/lib/notion';
 
 export async function GET(
@@ -33,18 +34,12 @@ export async function PUT(
   try {
     const { id } = await context.params;
     const updates = await request.json();
-    
-    // TODO: Update task in Notion
-    // const updatedTask = await updateTaskInNotion(id, updates);
-    
-    return NextResponse.json(
-      { message: 'Task update not yet implemented', success: false },
-      { status: 501 }
-    );
+    const updatedTask = await updateTaskInNotion(id, updates);
+    return NextResponse.json({ task: updatedTask, success: true });
   } catch (error) {
     console.error('Error updating task:', error);
     return NextResponse.json(
-      { error: 'Failed to update task', success: false },
+      { error: (error as any)?.message || 'Failed to update task', success: false },
       { status: 500 }
     );
   }
@@ -56,18 +51,12 @@ export async function DELETE(
 ) {
   try {
     const { id } = await context.params;
-    
-    // TODO: Delete (archive) task in Notion
-    // await deleteTaskInNotion(id);
-    
-    return NextResponse.json(
-      { message: 'Task deletion not yet implemented', success: false },
-      { status: 501 }
-    );
+    await deleteTaskInNotion(id);
+    return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Error deleting task:', error);
     return NextResponse.json(
-      { error: 'Failed to delete task', success: false },
+      { error: (error as any)?.message || 'Failed to delete task', success: false },
       { status: 500 }
     );
   }

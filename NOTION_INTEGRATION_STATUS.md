@@ -210,3 +210,10 @@ If you encounter issues:
 - Added Notion Database shortcut link (requires `NEXT_PUBLIC_NOTION_DATABASE_ID` env var for client).
 - `/api/tasks` GET now returns live Notion tasks; POST creates pages in database.
 - Next step: expose PUT/DELETE handlers and wire state updates to Notion functions in `lib/store.ts`.
+
+### Sync wiring
+- Implemented `/api/tasks/[id]` PUT/DELETE to update/archive tasks in Notion.
+- Store now performs optimistic updates and calls these APIs:
+  - `addTask` will POST when a temp task is created and replace it with the created Notion task.
+  - `updateTask` will PUT to `/api/tasks/[id]` and reconcile the returned task.
+  - `deleteTask` will DELETE and keep the UI updated (optimistic remove).
