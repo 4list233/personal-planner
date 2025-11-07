@@ -203,3 +203,10 @@ If you encounter issues:
   - Created test task successfully
   - Task ID: `2a4d1ec6-44e8-81e1-99a8-dc3427d1568f`
   - Title: `🧪 Test Task (local time)`
+
+## UI & API Enhancements (2025-11-07)
+
+- Added "Add Task" button in `DashboardHeader.tsx` that attempts POST `/api/tasks` (writes to Notion) with local fallback.
+- Added Notion Database shortcut link (requires `NEXT_PUBLIC_NOTION_DATABASE_ID` env var for client).
+- `/api/tasks` GET now returns live Notion tasks; POST creates pages in database.
+- Next step: expose PUT/DELETE handlers and wire state updates to Notion functions in `lib/store.ts`.

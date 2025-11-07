@@ -1,18 +1,12 @@
 // API Route: GET /api/tasks
 // Fetches all tasks from Notion database
 
-import { NextResponse } from 'next/server';
-// import { fetchTasksFromNotion } from '@/lib/notion';
-import { mockTasks } from '@/lib/mock-data';
+import { NextRequest, NextResponse } from 'next/server';
+import { fetchTasksFromNotion, createTaskInNotion } from '@/lib/notion';
 
 export async function GET() {
   try {
-    // TODO: Replace with actual Notion API call
-    // const tasks = await fetchTasksFromNotion();
-    
-    // For now, return mock data
-    const tasks = mockTasks;
-    
+    const tasks = await fetchTasksFromNotion();
     return NextResponse.json({ tasks, success: true });
   } catch (error) {
     console.error('Error fetching tasks:', error);
@@ -25,17 +19,24 @@ export async function GET() {
 
 // POST /api/tasks
 // Creates a new task in Notion database
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    
-    // TODO: Validate with Zod schema
-    // TODO: Call createTaskInNotion(body)
-    
-    return NextResponse.json(
-      { message: 'Task creation not yet implemented', success: false },
-      { status: 501 }
-    );
+    const now = new Date();
+
+    // Minimal shape; in a full implementation, validate with Zod
+    const newTask = await createTaskInNotion({
+      title: (body.title as string) || 'New Task',
+      dueDate:
+        (body.dueDate as string | undefined) || now.toISOString().split('T')[0],
+      dateCreated: now.toISOString(),
+      status: (body.status as any) || 'To Do',
+      weekday: (body.weekday as any) || 'No Weekdays',
+      daysUntilDue: 0,
+      todoItems: Array.isArray(body.todoItems) ? body.todoItems : [],
+    });
+
+    return NextResponse.json({ task: newTask, success: true });
   } catch (error) {
     console.error('Error creating task:', error);
     return NextResponse.json(
