@@ -1,8 +1,8 @@
-# 📋 Assessment & Deadlines - Personal Planner
+# 📋 Personal Planner (Live Notion-Backed)
 
-**Forest's Scrappy Tool 😁**
+**Forest's Scrappy Tool 2.0 😁**
 
-A modern, feature-rich personal planner built with Next.js 14 and TypeScript, designed to integrate with Notion as a database backend.
+Live deployment integrates directly with your Notion database (no mock tasks). Draft workflow: tasks are local until you hit Submit in the modal.
 
 ## ✨ Features
 
@@ -114,34 +114,64 @@ personal-planner/
 │   ├── ViewSwitcher.tsx      # Toggle between views
 │   └── WeekdaysView.tsx      # Week-based organization
 ├── lib/
-│   ├── mock-data.ts          # Sample tasks for development
+│   ├── mock-data.ts          # Empty (legacy placeholder)
 │   ├── store.ts              # Zustand state management
 │   └── types.ts              # TypeScript type definitions
 └── package.json
 ```
 
-## 🔄 Next Steps: Notion Integration
+## 🔄 Notion Integration Status
 
-Ready to connect to Notion? Here's what you'll need:
+- Uses `@notionhq/client` v5 with layered fallbacks (SDK query ➜ REST ➜ search) for reliable fetches.
+- Environment variables required:
+  - `NOTION_API_KEY` (server)
+  - `NOTION_DATABASE_ID` (server)
+  - `NEXT_PUBLIC_NOTION_DATABASE_ID` (optional public link)
+- API routes implemented:
+  - `GET /api/tasks` (supports `?debug=1`)
+  - `POST /api/tasks`
+  - `PUT /api/tasks/:id` (retry on conflicts)
+  - `DELETE /api/tasks/:id`
+  - `GET /api/version` (deployment info)
+- Draft workflow: Add Task creates a local draft (temp id). Persisted only when Submit is clicked in the modal.
 
-### 1. Setup Notion API
+### Required Property Keys for Writing
+- `Name` (title)
+- `Status` (select; Reminders | Long Term Deadlines | To Do | Doing Today | Doing Tomorrow | Archived)
+- `Due Date` (date)
+- `Weekdays` (select; No Weekdays + days of week)
+- `Todos` (rich_text; newline list with ✓ prefix for completed)
 
+Reads attempt heuristic matching by type if names differ.
+
+## 🧪 Debug & Verification
+
+Endpoints:
 ```bash
-# Add environment variables
-NOTION_API_KEY=your_notion_integration_key
-NOTION_DATABASE_ID=your_database_id
+GET /api/tasks?debug=1
+GET /api/version
+GET /api/health/notion
+GET /api/health/notion/raw
 ```
 
-### 2. Create API Routes
+`/api/version` exposes commit SHA to confirm Vercel deployment freshness.
 
-The project is ready for API integration. Create:
-- `app/api/tasks/route.ts` - GET all tasks
-- `app/api/tasks/[id]/route.ts` - GET/PUT/DELETE single task
-- Use `@notionhq/client` already installed
+## 📝 Draft vs Submit Workflow
 
-### 3. Update Store
+1. Add Task ➜ creates a local draft (not saved to Notion yet).
+2. Edit title/status/due/todos locally (no API calls while typing).
+3. Submit ➜ creates or updates the Notion page.
+4. Conflicts (409) on update are retried briefly.
 
-Replace mock data fetching with real API calls in the components.
+## 🚨 Deployment Checklist
+1. Verify commit via `/api/version` matches GitHub main.
+2. Ensure env vars set in Vercel (& redeploy after changes): `NOTION_API_KEY`, `NOTION_DATABASE_ID`, `NEXT_PUBLIC_NOTION_DATABASE_ID`.
+3. Use `/api/tasks?debug=1` to confirm server sees tasks.
+4. If zero tasks, confirm property names or add required properties.
+
+## 🔐 Security Notes
+- `NOTION_API_KEY` never sent to client; only server env.
+- Public DB link uses `NEXT_PUBLIC_NOTION_DATABASE_ID`.
 
 ## 🎨 Customization
 

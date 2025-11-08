@@ -8,7 +8,10 @@ export default function DashboardHeader() {
   const { currentView, setCurrentView, addTask, setSelectedTask, setIsModalOpen } = usePlannerStore();
 
   const dbIdPublic = process.env.NEXT_PUBLIC_NOTION_DATABASE_ID;
-  const notionDbUrl = dbIdPublic ? `https://www.notion.so/${dbIdPublic.replace(/-/g, '')}` : undefined;
+  // Show the button placeholder even if the env var isn't set so it's clear in prod
+  const notionDbUrl = dbIdPublic && dbIdPublic !== 'placeholder_id'
+    ? `https://www.notion.so/${dbIdPublic.replace(/-/g, '')}`
+    : undefined;
 
   const handleNewTask = async () => {
     // Always create a local draft first; no server call until user submits
@@ -38,7 +41,7 @@ export default function DashboardHeader() {
             <p className="text-sm text-gray-500 mt-1">Forest's Personal Planner 😁</p>
           </div>
           <div className="flex items-center gap-2">
-            {notionDbUrl && (
+            {notionDbUrl ? (
               <a
                 href={notionDbUrl}
                 target="_blank"
@@ -49,6 +52,14 @@ export default function DashboardHeader() {
                 <ExternalLink size={16} />
                 Notion DB
               </a>
+            ) : (
+              <span
+                className="flex items-center gap-1 px-3 py-2 text-sm text-gray-400 rounded-lg"
+                title="Set NEXT_PUBLIC_NOTION_DATABASE_ID in environment to enable link"
+              >
+                <ExternalLink size={16} />
+                Notion DB
+              </span>
             )}
           <button 
             onClick={handleNewTask}

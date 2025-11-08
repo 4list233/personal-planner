@@ -1,5 +1,8 @@
 'use client';
 
+// Disable caching of this page in production by using a no-store fetch for data already.
+// (Removed export const dynamic to avoid name clash with next/dynamic import.)
+
 import { useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { usePlannerStore } from '@/lib/store';
