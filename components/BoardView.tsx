@@ -123,7 +123,7 @@ function DroppableColumn({ status, color, tasks, isCollapsed, onToggle }: {
 }
 
 export default function BoardView() {
-  const { tasks, updateTask } = usePlannerStore();
+  const { tasks, updateTask, submitPartial } = usePlannerStore();
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [isArchiveCollapsed, setIsArchiveCollapsed] = useState(true);
 
@@ -175,7 +175,10 @@ export default function BoardView() {
     // Only update if the status actually changed
     const draggedTask = tasks.find((t) => t.id === taskId);
     if (draggedTask && draggedTask.status !== newStatus) {
+      // Local optimistic update
       updateTask(taskId, { status: newStatus });
+      // Fire-and-forget persist of just the status (ignore drafts)
+      submitPartial(taskId, { status: newStatus });
     }
   };
 

@@ -4,7 +4,7 @@ import { usePlannerStore } from '@/lib/store';
 import { useEffect, useState } from 'react';
 
 export default function CalendarView() {
-  const { tasks, setSelectedTask, setIsModalOpen, updateTask } = usePlannerStore();
+  const { tasks, setSelectedTask, setIsModalOpen, updateTask, submitPartial } = usePlannerStore();
   const [FullCalendar, setFullCalendar] = useState<any>(null);
   const [dayGridPlugin, setDayGridPlugin] = useState<any>(null);
   const [interactionPlugin, setInteractionPlugin] = useState<any>(null);
@@ -60,6 +60,7 @@ export default function CalendarView() {
     const newDate = info.event.startStr;
     
     updateTask(taskId, { dueDate: newDate });
+    submitPartial(taskId, { dueDate: newDate });
   };
 
   return (

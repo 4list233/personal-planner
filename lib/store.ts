@@ -23,6 +23,7 @@ interface PlannerStore {
   updateTask: (id: string, updates: Partial<Task>) => void;
   deleteTask: (id: string) => Promise<void> | void;
   submitTask: (id: string) => Promise<void>;
+  submitPartial: (id: string, updates: Partial<Task>) => Promise<void>; // persist only provided fields
   setCurrentView: (view: ViewType) => void;
   setSelectedTask: (task: Task | null) => void;
   setIsModalOpen: (isOpen: boolean) => void;
@@ -114,6 +115,29 @@ export const usePlannerStore = create<PlannerStore>((set, get) => ({
       }
     } catch (e) {
       console.error('Failed to submit task:', e);
+    }
+  },
+  submitPartial: async (id, updates) => {
+    // Persist only selected fields (used by drag/drop and calendar moves)
+    if (id.startsWith('temp-')) return; // drafts should submit full task
+    try {
+      const res = await fetch(`/api/tasks/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      });
+      if (!res.ok) {
+        console.error('Partial submit failed:', await res.text());
+        return;
+      }
+      const data = await res.json();
+      const updated: Task = data.task;
+      set((state) => ({
+        tasks: state.tasks.map((t) => (t.id === id ? updated : t)),
+        selectedTask: state.selectedTask?.id === id ? updated : state.selectedTask,
+      }));
+    } catch (e) {
+      console.error('Partial submit error:', e);
     }
   },
   deleteTask: async (id) => {

@@ -86,7 +86,7 @@ function DroppableWeekday({ day, color, tasks }: { day: Weekday; color: string; 
 }
 
 export default function WeekdaysView() {
-  const { tasks, updateTask } = usePlannerStore();
+  const { tasks, updateTask, submitPartial } = usePlannerStore();
   const [activeTask, setActiveTask] = useState<Task | null>(null);
 
   const sensors = useSensors(
@@ -139,6 +139,7 @@ export default function WeekdaysView() {
     const draggedTask = tasks.find((t) => t.id === taskId);
     if (draggedTask && draggedTask.weekday !== newWeekday) {
       updateTask(taskId, { weekday: newWeekday });
+      submitPartial(taskId, { weekday: newWeekday });
     }
   };
 
