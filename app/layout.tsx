@@ -16,6 +16,16 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Assessment & Deadlines - Personal Planner",
   description: "Forest's Scrappy Tool 😁",
+  icons: {
+    icon: '/favicon.ico',
+    apple: '/apple-icon.png',
+  },
+  manifest: '/manifest.json',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+    title: 'Personal Planner',
+  },
 };
 
 export default function RootLayout({
