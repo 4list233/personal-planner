@@ -10,7 +10,7 @@ import {
   DragEndEvent,
   DragOverlay,
   DragStartEvent,
-  closestCorners,
+  closestCenter,
   PointerSensor,
   useSensor,
   useSensors,
@@ -97,8 +97,8 @@ function DroppableColumn({ status, color, tasks, isCollapsed, onToggle, droppabl
   }
 
   return (
-    <div ref={setNodeRef} className="flex-shrink-0 w-full min-w-[240px] max-w-[280px]">
-      <div className={`rounded-lg ${color} p-4`}>
+    <div className="flex-shrink-0 w-full min-w-[240px] max-w-[280px]">
+      <div ref={setNodeRef} className={`rounded-lg ${color} p-4 min-h-[300px]`}>
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-semibold text-gray-900 text-sm flex items-center gap-2">
             {isArchived && <Archive size={16} className="text-gray-600" />}
@@ -194,7 +194,7 @@ export default function BoardView() {
     <>
       <DndContext
         sensors={sensors}
-        collisionDetection={closestCorners}
+        collisionDetection={closestCenter}
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
       >
