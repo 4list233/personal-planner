@@ -59,7 +59,7 @@ export default function TaskCard({ task, onClick }: TaskCardProps) {
       {task.dueDate && (
         <div className="text-xs text-gray-500 mb-2 flex items-center gap-1">
           <Calendar size={12} />
-          {format(new Date(task.dueDate), 'yyyy/MM/dd')}
+          {task.dueDate.split('T')[0].replace(/-/g, '/')}
         </div>
       )}
 
