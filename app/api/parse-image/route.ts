@@ -122,6 +122,27 @@ Extract all tasks from the image and return ONLY the JSON array, no additional t
     return NextResponse.json({ tasks, raw: content, success: true });
   } catch (error: any) {
     console.error('Vision parsing error:', error);
+    
+    // Check for quota exceeded errors
+    if (error.message?.includes('quota') || error.message?.includes('429') || error.message?.includes('Too Many Requests')) {
+      return NextResponse.json(
+        {
+          error: '❌ Gemini API Quota Exceeded',
+          message: 'The AI image parsing feature has reached its daily/monthly limit.',
+          solutions: [
+            '1. Get a new API key at: https://aistudio.google.com/apikey',
+            '2. Wait for quota to reset (check: https://ai.dev/usage)',
+            '3. Upgrade to paid tier for unlimited usage',
+            '4. Or manually enter tasks for now'
+          ],
+          details: error.message,
+          success: false,
+        },
+        { status: 429 }
+      );
+    }
+    
+    // Generic error
     return NextResponse.json(
       {
         error: error.message || 'Failed to parse image',
