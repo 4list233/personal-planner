@@ -144,7 +144,12 @@ export default function WeekdaysView() {
   };
 
   const getTasksByWeekday = (day: Weekday) => {
-    return tasks.filter((task) => task.weekday === day || (!task.weekday && day === 'No Weekdays'));
+    return tasks.filter((task) => {
+      // Filter out archived tasks
+      if (task.status === 'Archived') return false;
+      // Match weekday
+      return task.weekday === day || (!task.weekday && day === 'No Weekdays');
+    });
   };
 
   return (
