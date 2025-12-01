@@ -74,24 +74,32 @@ function DroppableColumn({ status, color, tasks, isCollapsed, onToggle, droppabl
 
   if (isArchived && isCollapsed) {
     return (
-      <div ref={setNodeRef} className="flex-shrink-0 w-full min-w-[240px] max-w-[280px]">
-        <button
-          onClick={onToggle}
-          className={`w-full rounded-lg ${color} p-4 hover:bg-gray-100 transition-colors`}
+      <div className="flex-shrink-0 w-full min-w-[240px] max-w-[280px]">
+        <div 
+          ref={setNodeRef}
+          className={`w-full rounded-lg ${color} p-4 min-h-[100px] transition-colors border-2 border-dashed border-transparent hover:border-gray-300`}
         >
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Archive size={16} className="text-gray-600" />
-              <h2 className="font-semibold text-gray-900 text-sm">
-                {status}
-              </h2>
-              <span className="bg-white text-gray-600 text-xs px-2 py-0.5 rounded-full">
-                {tasks.length}
-              </span>
+          <button
+            onClick={onToggle}
+            className="w-full"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Archive size={16} className="text-gray-600" />
+                <h2 className="font-semibold text-gray-900 text-sm">
+                  {status}
+                </h2>
+                <span className="bg-white text-gray-600 text-xs px-2 py-0.5 rounded-full">
+                  {tasks.length}
+                </span>
+              </div>
+              <ChevronRight size={16} className="text-gray-600" />
             </div>
-            <ChevronRight size={16} className="text-gray-600" />
+          </button>
+          <div className="mt-2 text-xs text-gray-500 text-center">
+            Drop tasks here to archive
           </div>
-        </button>
+        </div>
       </div>
     );
   }
@@ -187,7 +195,15 @@ export default function BoardView() {
   };
 
   const getTasksByStatus = (status: TaskStatus) => {
-    return tasks.filter((task) => task.status === status);
+    return tasks
+      .filter((task) => task.status === status)
+      .sort((a, b) => {
+        // Sort by due date: earliest first, tasks without dates go to the end
+        if (!a.dueDate && !b.dueDate) return 0;
+        if (!a.dueDate) return 1;
+        if (!b.dueDate) return -1;
+        return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+      });
   };
 
   return (

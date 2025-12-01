@@ -144,12 +144,20 @@ export default function WeekdaysView() {
   };
 
   const getTasksByWeekday = (day: Weekday) => {
-    return tasks.filter((task) => {
-      // Filter out archived tasks
-      if (task.status === 'Archived') return false;
-      // Match weekday
-      return task.weekday === day || (!task.weekday && day === 'No Weekdays');
-    });
+    return tasks
+      .filter((task) => {
+        // Filter out archived tasks
+        if (task.status === 'Archived') return false;
+        // Match weekday
+        return task.weekday === day || (!task.weekday && day === 'No Weekdays');
+      })
+      .sort((a, b) => {
+        // Sort by due date: earliest first, tasks without dates go to the end
+        if (!a.dueDate && !b.dueDate) return 0;
+        if (!a.dueDate) return 1;
+        if (!b.dueDate) return -1;
+        return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+      });
   };
 
   return (
