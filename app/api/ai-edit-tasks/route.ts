@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No prompt provided' }, { status: 400 });
     }
 
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' }); // Stable model with better free tier limits (15 RPM, 1M TPM, 1500 RPD)
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' }); // Stable Gemini 2.0 Flash model
 
     const systemPrompt = `You are a task management AI assistant. The user has multiple tasks and wants to batch edit them.
 

@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
     }
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' }); // Stable model - Free tier: 15 RPM, 1M TPM, 1500 RPD (much higher daily limit)
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' }); // Stable Gemini 2.0 Flash model
 
     const currentYear = new Date().getFullYear();
     const systemPrompt = `You are a task extraction assistant. Analyze the provided image (screenshot, photo, handwritten note, etc.) and extract all tasks/to-dos.
