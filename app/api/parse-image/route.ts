@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { getGeminiFallbackClient } from '@/lib/gemini-fallback';
 import { verifyIdToken } from '@/lib/firebase-admin';
 
 export const runtime = 'nodejs';
@@ -34,8 +34,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No image provided' }, { status: 400 });
     }
 
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' }); // Stable Gemini 2.0 Flash model
+    // Initialize fallback client with multi-modal support
+    const geminiClient = getGeminiFallbackClient({ requireMultiModal: true });
 
     const currentYear = new Date().getFullYear();
     const systemPrompt = `You are a task extraction assistant. Analyze the provided image (screenshot, photo, handwritten note, etc.) and extract all tasks/to-dos.
@@ -88,7 +88,7 @@ Extract all tasks from the image and return ONLY the JSON array, no additional t
     const mimeType = `image/${base64Match[1]}`;
     const base64Data = base64Match[2];
 
-    const result = await model.generateContent([
+    const result = await geminiClient.generateContent([
       systemPrompt,
       {
         inlineData: {
@@ -98,8 +98,10 @@ Extract all tasks from the image and return ONLY the JSON array, no additional t
       },
     ]);
 
-    const response = await result.response;
-    const content = response.text().trim();
+    const content = result.text.trim();
+    const modelUsed = result.modelUsed;
+    console.log(`[Parse Image] Used model: ${modelUsed} (${result.attemptsMade} attempts)`);
+
 
     // Try to parse JSON from response
     let tasks = [];
@@ -119,7 +121,13 @@ Extract all tasks from the image and return ONLY the JSON array, no additional t
       );
     }
 
-    return NextResponse.json({ tasks, raw: content, success: true });
+    return NextResponse.json({ 
+      tasks, 
+      raw: content, 
+      success: true,
+      modelUsed,
+      attemptsMade: result.attemptsMade
+    });
   } catch (error: any) {
     console.error('Vision parsing error:', error);
     

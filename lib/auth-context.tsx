@@ -9,7 +9,7 @@ import {
   onAuthStateChanged,
   signInWithPopup
 } from 'firebase/auth';
-import { auth, googleProvider } from './firebase';
+import { auth, googleProvider, firebaseInitError } from './firebase';
 
 interface AuthContextType {
   user: User | null;
@@ -33,6 +33,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
+    // Check for Firebase initialization error first
+    if (firebaseInitError) {
+      setError(firebaseInitError);
+      setLoading(false);
+      return;
+    }
+    
     if (!auth) {
       setError(new Error('Firebase auth not initialized'));
       setLoading(false);
@@ -100,8 +107,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   if (error) {
     return (
-      <div style={{ color: 'red', padding: 24 }}>
-        <b>Auth initialization failed:</b> {error.message}
+      <div style={{ 
+        padding: '2rem', 
+        maxWidth: '600px', 
+        margin: '2rem auto',
+        backgroundColor: '#fee',
+        border: '1px solid #c33',
+        borderRadius: '8px'
+      }}>
+        <h2 style={{ color: '#c33', marginTop: 0 }}>⚠️ Configuration Error</h2>
+        <p><strong>Firebase authentication could not initialize.</strong></p>
+        <p style={{ fontSize: '14px', color: '#666' }}>{error.message}</p>
+        <details style={{ marginTop: '1rem', fontSize: '14px' }}>
+          <summary style={{ cursor: 'pointer', fontWeight: 'bold' }}>Troubleshooting</summary>
+          <ul style={{ marginTop: '0.5rem' }}>
+            <li>Ensure Firebase environment variables are set in your deployment platform</li>
+            <li>Check that <code>www.forestli.me</code> is added to Firebase authorized domains</li>
+            <li>Verify all NEXT_PUBLIC_FIREBASE_* variables are correct</li>
+            <li>Try clearing your browser cache and reloading</li>
+          </ul>
+        </details>
       </div>
     );
   }

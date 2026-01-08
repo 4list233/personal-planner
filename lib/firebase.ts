@@ -29,10 +29,23 @@ function assertFirebaseConfig(cfg: FirebaseConfig) {
   if (!cfg.appId) missing.push('NEXT_PUBLIC_FIREBASE_APP_ID');
 
   if (missing.length) {
-    const msg = `Firebase config missing env vars: ${missing.join(', ')}. Ensure .env.local is populated and the dev server restarted.`;
+    const msg = `🔥 Firebase Config Error: Missing environment variables: ${missing.join(', ')}
+
+For local development:
+1. Create .env.local file in project root
+2. Add these variables from Firebase Console
+3. Restart dev server
+
+For Vercel deployment:
+1. Go to Vercel Dashboard → Your Project → Settings → Environment Variables
+2. Add the missing variables: ${missing.join(', ')}
+3. Redeploy your application
+
+Visit: https://github.com/4list233/personal-planner for setup instructions`;
+    
     if (typeof window !== 'undefined') {
-      // In the browser, throw to make the error visible in UI/network tab
-      // This directly surfaces the root cause of auth/api-key-not-valid
+      // In the browser, throw to make the error visible in UI/console
+      console.error(msg);
       throw new Error(msg);
     } else {
       console.warn(msg);

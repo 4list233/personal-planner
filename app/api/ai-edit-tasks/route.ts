@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { getGeminiFallbackClient } from '@/lib/gemini-fallback';
 import { verifyIdToken } from '@/lib/firebase-admin';
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
 export async function POST(request: NextRequest) {
   try {
@@ -28,7 +26,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No prompt provided' }, { status: 400 });
     }
 
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' }); // Stable Gemini 2.0 Flash model
+    // Initialize fallback client (text-only mode for task editing)
+    const geminiClient = getGeminiFallbackClient({ requireMultiModal: false });
 
     const systemPrompt = `You are a task management AI assistant. The user has multiple tasks and wants to batch edit them.
 
@@ -65,8 +64,10 @@ Return format:
   ]
 }`;
 
-    const result = await model.generateContent(systemPrompt);
-    const text = result.response.text();
+    const result = await geminiClient.generateContent(systemPrompt);
+    const text = result.text;
+    console.log(`[AI Edit] Used model: ${result.modelUsed} (${result.attemptsMade} attempts)`);
+
     
     // Extract JSON from response
     const jsonMatch = text.match(/\{[\s\S]*\}/);
