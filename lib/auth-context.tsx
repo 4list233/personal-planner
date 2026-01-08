@@ -33,13 +33,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
-    // Check for Firebase initialization error first
-    if (firebaseInitError) {
-      setError(firebaseInitError);
-      setLoading(false);
-      return;
-    }
-    
     if (!auth) {
       setError(new Error('Firebase auth not initialized'));
       setLoading(false);
