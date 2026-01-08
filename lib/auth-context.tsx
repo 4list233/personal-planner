@@ -9,7 +9,7 @@ import {
   onAuthStateChanged,
   signInWithPopup
 } from 'firebase/auth';
-import { auth, googleProvider, firebaseInitError } from './firebase';
+import { auth, googleProvider } from './firebase';
 
 interface AuthContextType {
   user: User | null;
