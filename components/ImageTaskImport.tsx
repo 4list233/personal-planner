@@ -280,7 +280,7 @@ export default function ImageTaskImport() {
             </div>
             <div className="flex gap-2">
               <button
-                onClick={handleNextInQueue}
+                onClick={() => handleNextInQueue()}
                 className="px-3 py-1 text-xs font-medium text-blue-700 bg-white border border-blue-300 rounded hover:bg-blue-50"
               >
                 Skip current
