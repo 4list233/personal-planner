@@ -1,7 +1,7 @@
 'use client';
 
 import { usePlannerStore } from '@/lib/store';
-import { X, Calendar, Clock, MessageSquare, Plus } from 'lucide-react';
+import { X, Calendar, Clock, MessageSquare } from 'lucide-react';
 import { format } from 'date-fns';
 import { useEffect, useState } from 'react';
 import { TaskStatus, Weekday, TodoItem } from '@/lib/types';
@@ -10,42 +10,59 @@ export default function TaskModal() {
   const { selectedTask, isModalOpen, setIsModalOpen, updateTask, deleteTask, submitTask } = usePlannerStore();
   const [editingTitle, setEditingTitle] = useState(false);
   const [newTodoText, setNewTodoText] = useState('');
-  const [isNewTask, setIsNewTask] = useState(false);
+
+  const dispatchModalAction = (action: 'submit' | 'cancel') => {
+    if (!selectedTask) return;
+    window.dispatchEvent(
+      new CustomEvent<{ action: 'submit' | 'cancel'; taskId: string }>('task-modal-action', {
+        detail: { action, taskId: selectedTask.id },
+      })
+    );
+  };
 
   useEffect(() => {
-    // Check if this is a new task (has temp ID and default title)
+    // Auto-focus the title for freshly created drafts
     if (selectedTask?.id.startsWith('temp-') && selectedTask?.title === 'New Task') {
-      setIsNewTask(true);
-      setEditingTitle(true); // Auto-focus title for new tasks
-    } else {
-      setIsNewTask(false);
+      setEditingTitle(true);
     }
   }, [selectedTask]);
 
-  const handleClose = () => {
-    // If it's a new task that hasn't been edited, remove it
-    if (isNewTask && selectedTask?.title === 'New Task') {
-      deleteTask(selectedTask.id);
+  const handleClose = async () => {
+    const isQueueDraft = Boolean(selectedTask?.queueId);
+    if (selectedTask?.id.startsWith('temp-') && !isQueueDraft) {
+      await deleteTask(selectedTask.id);
     }
     setIsModalOpen(false);
+    dispatchModalAction('cancel');
   };
 
   const handleSave = async () => {
     if (!selectedTask) return;
     await submitTask(selectedTask.id);
+    dispatchModalAction('submit');
     setIsModalOpen(false);
   };
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        handleClose();
-      }
-      
-      // Only trigger on Command+Enter or Ctrl+Enter to avoid conflicts with input fields
-      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && isNewTask) {
         e.preventDefault();
-        handleSave();
+        void handleClose();
+      }
+
+      const activeElement = document.activeElement as HTMLElement | null;
+      const isTyping = activeElement && ['INPUT', 'TEXTAREA'].includes(activeElement.tagName);
+      const isDraftTask = selectedTask?.id.startsWith('temp-');
+
+      // Submit draft tasks with Enter (and still support Cmd/Ctrl+Enter)
+      if (isDraftTask) {
+        if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+          e.preventDefault();
+          void handleSave();
+        } else if (e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey && !isTyping) {
+          e.preventDefault();
+          void handleSave();
+        }
       }
     };
 
@@ -58,7 +75,7 @@ export default function TaskModal() {
       document.removeEventListener('keydown', handleKeyDown);
       document.body.style.overflow = 'unset';
     };
-  }, [isModalOpen, isNewTask]);
+  }, [isModalOpen, selectedTask]);
 
   if (!isModalOpen || !selectedTask) return null;
 
@@ -111,7 +128,7 @@ export default function TaskModal() {
   return (
     <div
       className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
-      onClick={handleClose}
+      onClick={() => void handleClose()}
     >
       <div
         className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
@@ -142,7 +159,7 @@ export default function TaskModal() {
             </h2>
           )}
           <button
-            onClick={handleClose}
+            onClick={() => void handleClose()}
             className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
           >
             <X size={20} className="text-gray-500" />
@@ -336,13 +353,13 @@ export default function TaskModal() {
         {/* Footer with persistent Submit button */}
         <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 px-6 py-4 flex items-center justify-end gap-3">
           <button
-            onClick={handleClose}
+            onClick={() => void handleClose()}
             className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-200 rounded-lg transition-colors"
           >
             Cancel
           </button>
           <button
-            onClick={handleSave}
+            onClick={() => void handleSave()}
             className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
           >
             Submit

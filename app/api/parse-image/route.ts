@@ -28,17 +28,21 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { image, instructions } = body; // image is base64 data URL
+    const { image, instructions, text } = body; // image is base64 data URL
 
-    if (!image) {
-      return NextResponse.json({ error: 'No image provided' }, { status: 400 });
+    if (!image && !text) {
+      return NextResponse.json({ error: 'No image or text provided' }, { status: 400 });
     }
 
     // Initialize fallback client with multi-modal support
     const geminiClient = getGeminiFallbackClient({ requireMultiModal: true });
 
     const currentYear = new Date().getFullYear();
-    const systemPrompt = `You are a task extraction assistant. Analyze the provided image (screenshot, photo, handwritten note, etc.) and extract all tasks/to-dos.
+    const systemPrompt = `You are a task extraction assistant. You may receive an image (screenshot, photo, handwritten note, etc.) and/or plain text. Extract all tasks/to-dos from whichever inputs are provided.
+
+  TEXT SUPPORT:
+  - If text is provided, extract tasks from the text alone even if no image is provided
+  - Separate the text into individual actionable tasks
 
 IMPORTANT DATE RULES:
 - If a date is mentioned WITHOUT a year (e.g., "Nov 15", "12/25"), automatically assume it's ${currentYear}
@@ -48,6 +52,9 @@ IMPORTANT DATE RULES:
 TIME HANDLING:
 - If a specific time is mentioned (e.g., "3pm", "14:00", "at 9:30"), add it to the "notes" field in this format: "Time: 3:00 PM" or "Time: 14:00"
 - Times should ALWAYS be included in the notes field, never in the title
+
+CLASS / COURSE CODES:
+- When a course or class code like "RSM-333" or "CSC108" appears, place that code first in the task title followed by a colon or dash (e.g., "RSM-333: Submit assignment 2")
 
 For each task, provide:
 - title (string): The main task description (WITHOUT time if mentioned separately)
@@ -78,25 +85,32 @@ If the image contains no tasks, return an empty array: []
 
 ${instructions ? `\nUser instructions: ${instructions}` : ''}
 
-Extract all tasks from the image and return ONLY the JSON array, no additional text. Remember: dates without years default to ${currentYear}, and times go in notes field.`;
+Extract all tasks from the provided image and/or text and return ONLY the JSON array, no additional text. Remember: dates without years default to ${currentYear}, times go in notes field, and any course code must lead the title.`;
+
+    const promptParts: any[] = [systemPrompt];
+
+    // Append user text when present so Gemini can split into individual tasks
+    if (text) {
+      promptParts.push(`User provided text to parse:\n${text}`);
+    }
 
     // Convert base64 data URL to inline data format for Gemini
-    const base64Match = image.match(/^data:image\/(png|jpg|jpeg|gif|webp);base64,(.+)$/);
-    if (!base64Match) {
-      return NextResponse.json({ error: 'Invalid image format' }, { status: 400 });
-    }
-    const mimeType = `image/${base64Match[1]}`;
-    const base64Data = base64Match[2];
-
-    const result = await geminiClient.generateContent([
-      systemPrompt,
-      {
+    if (image) {
+      const base64Match = image.match(/^data:image\/(png|jpg|jpeg|gif|webp);base64,(.+)$/);
+      if (!base64Match) {
+        return NextResponse.json({ error: 'Invalid image format' }, { status: 400 });
+      }
+      const mimeType = `image/${base64Match[1]}`;
+      const base64Data = base64Match[2];
+      promptParts.push({
         inlineData: {
           mimeType,
           data: base64Data,
         },
-      },
-    ]);
+      });
+    }
+
+    const result = await geminiClient.generateContent(promptParts);
 
     const content = result.text.trim();
     const modelUsed = result.modelUsed;

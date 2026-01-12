@@ -26,6 +26,9 @@ export interface Task {
   weekday?: Weekday;
   todoItems?: TodoItem[];
   comments?: string[];
+  source?: 'manual' | 'gemini-image' | 'gemini-text';
+  queueId?: string;
+  isDraft?: boolean;
 }
 
 export interface TodoItem {
