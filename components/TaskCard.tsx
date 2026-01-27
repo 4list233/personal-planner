@@ -51,7 +51,7 @@ export default function TaskCard({ task, onClick }: TaskCardProps) {
     >
       <div className="flex items-start gap-2 mb-2">
         <FileText size={16} className="text-gray-400 mt-0.5 flex-shrink-0" />
-        <h3 className="text-sm font-medium text-gray-900 group-hover:text-blue-600 transition-colors">
+        <h3 className="text-sm font-medium text-gray-900 group-hover:text-blue-600 transition-colors break-words overflow-wrap-anywhere">
           {task.title}
         </h3>
       </div>
@@ -79,14 +79,14 @@ export default function TaskCard({ task, onClick }: TaskCardProps) {
         <div className="mt-3 pt-3 border-t border-gray-100">
           <div className="text-xs font-semibold text-gray-700 mb-2">To-do</div>
           {task.todoItems.map((item) => (
-            <div key={item.id} className="flex items-center gap-2 text-xs text-gray-600 mb-1">
+            <div key={item.id} className="flex items-start gap-2 text-xs text-gray-600 mb-1">
               <input
                 type="checkbox"
                 checked={item.completed}
                 readOnly
-                className="w-3 h-3 rounded border-gray-300"
+                className="w-3 h-3 rounded border-gray-300 mt-0.5 flex-shrink-0"
               />
-              <span className={item.completed ? 'line-through' : ''}>{item.text}</span>
+              <span className={item.completed ? 'line-through break-words' : 'break-words'}>{item.text}</span>
             </div>
           ))}
         </div>
