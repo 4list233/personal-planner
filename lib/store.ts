@@ -111,6 +111,8 @@ interface PlannerStore {
   currentView: ViewType;
   selectedTask: Task | null;
   isModalOpen: boolean;
+  /** Multi-selection set used by the Matrix view. */
+  selectedTaskIds: Set<string>;
   setTasks: (tasks: Task[]) => void;
   addTask: (task: Task) => void;
   updateTask: (id: string, updates: Partial<Task>) => void;
@@ -120,6 +122,12 @@ interface PlannerStore {
   setCurrentView: (view: ViewType) => void;
   setSelectedTask: (task: Task | null) => void;
   setIsModalOpen: (isOpen: boolean) => void;
+  toggleSelection: (id: string) => void;
+  clearSelection: () => void;
+  bulkUpdate: (
+    updates: Array<{ id: string; patch: Partial<Task> }>,
+    opts?: { concurrency?: number }
+  ) => Promise<{ ok: number; failed: number }>;
 }
 
 function setPendingSync(taskId: string, pending: boolean) {
@@ -150,6 +158,7 @@ export const usePlannerStore = create<PlannerStore>((set, get) => ({
   currentView: 'board',
   selectedTask: null,
   isModalOpen: false,
+  selectedTaskIds: new Set<string>(),
   setTasks: (tasks) => set({ tasks }),
   addTask: (task) => {
     set((state) => ({ tasks: [...state.tasks, task] }));
@@ -294,4 +303,69 @@ export const usePlannerStore = create<PlannerStore>((set, get) => ({
   setCurrentView: (view) => set({ currentView: view }),
   setSelectedTask: (task) => set({ selectedTask: task }),
   setIsModalOpen: (isOpen) => set({ isModalOpen: isOpen }),
+  toggleSelection: (id) =>
+    set((state) => {
+      const next = new Set(state.selectedTaskIds);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return { selectedTaskIds: next };
+    }),
+  clearSelection: () => set({ selectedTaskIds: new Set<string>() }),
+  bulkUpdate: async (updates, opts = {}) => {
+    const concurrency = Math.max(1, opts.concurrency ?? 3);
+    let ok = 0;
+    let failed = 0;
+    let i = 0;
+
+    // Mark all targeted tasks pending up-front for visual feedback.
+    set((state) => ({
+      tasks: state.tasks.map((t) =>
+        updates.some((u) => u.id === t.id) ? { ...t, pendingSync: true } : t
+      ),
+    }));
+
+    const runOne = async (u: { id: string; patch: Partial<Task> }) => {
+      try {
+        const headers = await getAuthHeaders();
+        const result = await attemptFetch(`/api/tasks/${u.id}`, {
+          method: 'PUT',
+          headers,
+          body: JSON.stringify(u.patch),
+        });
+        if (!result.ok) {
+          failed++;
+          setPendingSync(u.id, false);
+          return;
+        }
+        const updated: Task = result.data.task;
+        ok++;
+        set((state) => ({
+          tasks: state.tasks.map((t) =>
+            t.id === u.id ? { ...updated, pendingSync: undefined } : t
+          ),
+          selectedTask:
+            state.selectedTask?.id === u.id
+              ? { ...updated, pendingSync: undefined }
+              : state.selectedTask,
+        }));
+      } catch {
+        failed++;
+        setPendingSync(u.id, false);
+      }
+    };
+
+    const workers: Promise<void>[] = [];
+    for (let w = 0; w < concurrency; w++) {
+      workers.push(
+        (async () => {
+          while (i < updates.length) {
+            const idx = i++;
+            await runOne(updates[idx]);
+          }
+        })()
+      );
+    }
+    await Promise.all(workers);
+    return { ok, failed };
+  },
 }));

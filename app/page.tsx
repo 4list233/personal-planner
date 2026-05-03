@@ -14,6 +14,7 @@ import DashboardHeader from '@/components/DashboardHeader';
 const BoardView = dynamic(() => import('@/components/BoardView'), { ssr: false });
 const WeekdaysView = dynamic(() => import('@/components/WeekdaysView'), { ssr: false });
 const CalendarView = dynamic(() => import('@/components/CalendarView'), { ssr: false });
+const MatrixView = dynamic(() => import('@/components/MatrixView'), { ssr: false });
 const TaskModal = dynamic(() => import('@/components/TaskModal'), { ssr: false });
 
 export default function Home() {
@@ -110,6 +111,7 @@ export default function Home() {
         {currentView === 'board' && <BoardView />}
         {currentView === 'weekdays' && <WeekdaysView />}
         {currentView === 'calendar' && <CalendarView />}
+        {currentView === 'matrix' && <MatrixView />}
       </main>
 
       <TaskModal />
