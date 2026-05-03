@@ -1,7 +1,7 @@
 'use client';
 
 import { usePlannerStore } from '@/lib/store';
-import { X, Calendar, Clock, MessageSquare } from 'lucide-react';
+import { X, Calendar, Clock, MessageSquare, Star, Flame } from 'lucide-react';
 import { format } from 'date-fns';
 import { useEffect, useState } from 'react';
 import { TaskStatus, Weekday, TodoItem } from '@/lib/types';
@@ -232,6 +232,51 @@ export default function TaskModal() {
                 <div className="text-sm text-gray-500 mb-1">Date Created</div>
                 <div className="text-sm font-medium text-gray-900">
                   {format(new Date(selectedTask.dateCreated), 'MMMM dd, yyyy h:mm a')}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-start gap-3">
+              <Star size={18} className="text-gray-400 mt-1" />
+              <div className="flex-1">
+                <div className="text-sm text-gray-500 mb-2">Priority</div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      updateTask(selectedTask.id, { important: !selectedTask.important })
+                    }
+                    className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium border transition-colors ${
+                      selectedTask.important
+                        ? 'bg-amber-100 text-amber-800 border-amber-300'
+                        : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
+                    }`}
+                    aria-pressed={!!selectedTask.important}
+                  >
+                    <Star
+                      size={14}
+                      className={selectedTask.important ? 'fill-amber-500 text-amber-500' : ''}
+                    />
+                    Important
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      updateTask(selectedTask.id, { urgent: !selectedTask.urgent })
+                    }
+                    className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium border transition-colors ${
+                      selectedTask.urgent
+                        ? 'bg-red-100 text-red-800 border-red-300'
+                        : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
+                    }`}
+                    aria-pressed={!!selectedTask.urgent}
+                  >
+                    <Flame
+                      size={14}
+                      className={selectedTask.urgent ? 'fill-red-500 text-red-500' : ''}
+                    />
+                    Urgent
+                  </button>
                 </div>
               </div>
             </div>
