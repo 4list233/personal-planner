@@ -37,6 +37,19 @@ export default function Home() {
     }
   }, [user, getIdToken]);
 
+  // Update document title to reflect the active view
+  useEffect(() => {
+    const labels: Record<string, string> = {
+      board: 'Personal Planner',
+      weekdays: 'Weekdays — Personal Planner',
+      calendar: 'Calendar — Personal Planner',
+      matrix: 'Matrix — Personal Planner',
+    };
+    if (typeof document !== 'undefined') {
+      document.title = labels[currentView] ?? 'Personal Planner';
+    }
+  }, [currentView]);
+
   useEffect(() => {
     setMounted(true);
     
