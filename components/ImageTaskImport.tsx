@@ -50,6 +50,23 @@ export default function ImageTaskImport() {
     return () => window.removeEventListener('task-modal-action', handleModalAction as EventListener);
   }, [activeTaskId, queueSource, queueId]);
 
+  // Esc cancels the entire queue (with confirmation), not just the current
+  // task. Per-task skip is handled by the modal's own Esc / Cancel button.
+  useEffect(() => {
+    if (!showQueueInfo) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      // Don't fire if the modal is also open — the modal's listener takes
+      // precedence for per-task skip via its Cancel.
+      if (taskQueue.length <= 1) return;
+      if (window.confirm(`Cancel the import queue? ${taskQueue.length} task${taskQueue.length === 1 ? '' : 's'} remaining will be discarded.`)) {
+        handleSkipQueue();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [showQueueInfo, taskQueue.length]);
+
   const mapTasksFromLLM = (llmTasks: any[]): ParsedTask[] =>
     llmTasks.map((t: any) => ({
       title: normalizeTitleWithCourseCode(t.title || 'Untitled'),
@@ -270,26 +287,32 @@ export default function ImageTaskImport() {
       </p>
 
       {showQueueInfo && taskQueue.length > 0 && (
-        <div className="mb-4 p-3 bg-blue-100 border border-blue-300 rounded-lg">
-          <div className="flex items-center justify-between">
+        <div className="sticky top-0 z-30 mb-4 p-3 bg-blue-100 border border-blue-300 rounded-lg shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <ChevronRight className="text-blue-600" size={18} />
               <span className="text-sm font-medium text-blue-900">
                 {taskQueue.length} task{taskQueue.length > 1 ? 's' : ''} remaining
               </span>
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-shrink-0">
               <button
                 onClick={() => handleNextInQueue()}
+                title="Skip the current task and move to the next one"
                 className="px-3 py-1 text-xs font-medium text-blue-700 bg-white border border-blue-300 rounded hover:bg-blue-50"
               >
                 Skip current
               </button>
               <button
-                onClick={handleSkipQueue}
-                className="px-3 py-1 text-xs font-medium text-gray-600 hover:text-gray-800"
+                onClick={() => {
+                  if (taskQueue.length <= 1 || window.confirm(`Cancel the import queue? ${taskQueue.length} task${taskQueue.length === 1 ? '' : 's'} will be discarded.`)) {
+                    handleSkipQueue();
+                  }
+                }}
+                title="Cancel the entire import queue (Esc)"
+                className="px-3 py-1 text-xs font-medium text-white bg-red-600 hover:bg-red-700 rounded"
               >
-                Cancel
+                Cancel queue
               </button>
             </div>
           </div>
