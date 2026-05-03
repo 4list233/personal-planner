@@ -8,8 +8,11 @@ import { TaskStatus, Weekday, TodoItem } from '@/lib/types';
 
 export default function TaskModal() {
   const { selectedTask, isModalOpen, setIsModalOpen, updateTask, deleteTask, submitTask } = usePlannerStore();
-  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState('');
+  const [titleError, setTitleError] = useState<string | null>(null);
+  const [dateError, setDateError] = useState<string | null>(null);
   const [newTodoText, setNewTodoText] = useState('');
+  const [newCommentText, setNewCommentText] = useState('');
 
   const dispatchModalAction = (action: 'submit' | 'cancel') => {
     if (!selectedTask) return;
@@ -21,11 +24,19 @@ export default function TaskModal() {
   };
 
   useEffect(() => {
-    // Auto-focus the title for freshly created drafts
-    if (selectedTask?.id.startsWith('temp-') && selectedTask?.title === 'New Task') {
-      setEditingTitle(true);
+    setTitleDraft(selectedTask?.title ?? '');
+    setTitleError(null);
+    setDateError(null);
+    setNewCommentText('');
+  }, [selectedTask?.id]);
+
+  const commitTitle = () => {
+    if (!selectedTask) return;
+    const trimmed = titleDraft.trim();
+    if (trimmed && trimmed !== selectedTask.title) {
+      updateTask(selectedTask.id, { title: trimmed });
     }
-  }, [selectedTask]);
+  };
 
   const handleClose = async () => {
     const isQueueDraft = Boolean(selectedTask?.queueId);
@@ -38,6 +49,26 @@ export default function TaskModal() {
 
   const handleSave = async () => {
     if (!selectedTask) return;
+    const trimmedTitle = titleDraft.trim();
+    if (!trimmedTitle || trimmedTitle === 'New Task') {
+      setTitleError('Title is required');
+      return;
+    }
+    if (selectedTask.dueDate) {
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(selectedTask.dueDate.split('T')[0]);
+      if (!m) {
+        setDateError('Date must be between 1970 and 2100');
+        return;
+      }
+      const y = Number(m[1]);
+      if (y < 1970 || y > 2100) {
+        setDateError('Date must be between 1970 and 2100');
+        return;
+      }
+    }
+    if (trimmedTitle !== selectedTask.title) {
+      updateTask(selectedTask.id, { title: trimmedTitle });
+    }
     await submitTask(selectedTask.id);
     dispatchModalAction('submit');
     setIsModalOpen(false);
@@ -135,32 +166,36 @@ export default function TaskModal() {
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
-          {editingTitle ? (
+        <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-start justify-between gap-3">
+          <div className="flex-1 min-w-0">
             <input
               type="text"
-              value={selectedTask.title}
-              onChange={(e) => updateTask(selectedTask.id, { title: e.target.value })}
-              onBlur={() => setEditingTitle(false)}
+              value={titleDraft}
+              onChange={(e) => {
+                setTitleDraft(e.target.value);
+                if (titleError) setTitleError(null);
+              }}
+              onBlur={commitTitle}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
-                  setEditingTitle(false);
+                  e.preventDefault();
+                  commitTitle();
+                  (e.target as HTMLInputElement).blur();
                 }
               }}
-              autoFocus
-              className="text-xl font-semibold text-gray-900 border-b-2 border-blue-500 focus:outline-none flex-1"
+              autoFocus={selectedTask.id.startsWith('temp-') && selectedTask.title === 'New Task'}
+              maxLength={500}
+              placeholder="Task title"
+              aria-label="Task title"
+              className="w-full text-xl font-semibold text-gray-900 bg-transparent border-b-2 border-transparent hover:border-gray-200 focus:border-blue-500 focus:outline-none px-0 line-clamp-2 max-w-full"
             />
-          ) : (
-            <h2
-              className="text-xl font-semibold text-gray-900 cursor-pointer hover:text-blue-600"
-              onClick={() => setEditingTitle(true)}
-            >
-              {selectedTask.title}
-            </h2>
-          )}
+            {titleError && (
+              <div className="mt-1 text-xs text-red-600">{titleError}</div>
+            )}
+          </div>
           <button
             onClick={() => void handleClose()}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"
           >
             <X size={20} className="text-gray-500" />
           </button>
