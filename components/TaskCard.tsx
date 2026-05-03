@@ -18,6 +18,15 @@ export default function TaskCard({ task, onClick }: TaskCardProps) {
     return 'text-gray-600';
   };
 
+  const formatDaysUntilDue = (days?: number) => {
+    if (days === undefined) return '';
+    if (Math.abs(days) > 365) return days > 0 ? 'in 1+ year' : 'overdue 1+ year';
+    if (days === 0) return 'Due today';
+    if (days === 1) return 'Due tomorrow';
+    if (days < 0) return `overdue ${Math.abs(days)}d`;
+    return `in ${days} days`;
+  };
+
   const getWeekdayColor = (weekday?: string) => {
     if (!weekday || weekday === 'No Weekdays') return 'bg-blue-100 text-blue-700';
     const colors: Record<string, string> = {
@@ -64,13 +73,19 @@ export default function TaskCard({ task, onClick }: TaskCardProps) {
       {task.dueDate && (
         <div className="text-xs text-gray-500 mb-2 flex items-center gap-1">
           <Calendar size={12} />
-          {task.dueDate.split('T')[0].replace(/-/g, '/')}
+          {(() => {
+            try {
+              return format(new Date(task.dueDate), 'MMM d, yyyy');
+            } catch {
+              return task.dueDate;
+            }
+          })()}
         </div>
       )}
 
       {task.daysUntilDue !== undefined && (
         <div className={`text-xs font-medium mb-2 ${getDaysUntilDueColor(task.daysUntilDue)}`}>
-          {task.daysUntilDue}
+          {formatDaysUntilDue(task.daysUntilDue)}
         </div>
       )}
 
