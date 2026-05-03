@@ -29,6 +29,8 @@ export interface Task {
   source?: 'manual' | 'gemini-image' | 'gemini-text';
   queueId?: string;
   isDraft?: boolean;
+  /** Local-only flag: server confirmation pending */
+  pendingSync?: boolean;
 }
 
 export interface TodoItem {

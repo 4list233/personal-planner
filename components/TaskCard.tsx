@@ -1,7 +1,7 @@
 'use client';
 
 import { Task } from '@/lib/types';
-import { FileText, Calendar } from 'lucide-react';
+import { FileText, Calendar, AlertTriangle } from 'lucide-react';
 import { format } from 'date-fns';
 
 interface TaskCardProps {
@@ -51,9 +51,14 @@ export default function TaskCard({ task, onClick }: TaskCardProps) {
     >
       <div className="flex items-start gap-2 mb-2">
         <FileText size={16} className="text-gray-400 mt-0.5 flex-shrink-0" />
-        <h3 className="text-sm font-medium text-gray-900 group-hover:text-blue-600 transition-colors break-words overflow-wrap-anywhere">
+        <h3 className="text-sm font-medium text-gray-900 group-hover:text-blue-600 transition-colors break-words overflow-wrap-anywhere flex-1">
           {task.title}
         </h3>
+        {task.pendingSync && (
+          <span title="Save pending — server has not confirmed">
+            <AlertTriangle size={14} className="text-amber-500 flex-shrink-0 mt-0.5" />
+          </span>
+        )}
       </div>
 
       {task.dueDate && (

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { AuthProvider } from "@/lib/auth-context";
+import Toaster from "@/components/Toaster";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -14,7 +15,10 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Assessment & Deadlines - Personal Planner",
+  title: {
+    default: "Personal Planner",
+    template: "%s — Personal Planner",
+  },
   description: "Forest's Scrappy Tool 😁",
   icons: {
     icon: '/favicon.ico',
@@ -40,6 +44,7 @@ export default function RootLayout({
       >
         <AuthProvider>
           {children}
+          <Toaster />
         </AuthProvider>
       </body>
     </html>
