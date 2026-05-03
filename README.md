@@ -6,7 +6,7 @@ Live deployment integrates directly with your Notion database (no mock tasks). D
 
 ## ✨ Features
 
-### 🎯 Three Powerful Views
+### 🎯 Four Powerful Views
 
 1. **Board View** (Kanban)
    - Drag-and-drop tasks between status columns
@@ -24,6 +24,13 @@ Live deployment integrates directly with your Notion database (no mock tasks). D
    - Visual task distribution across dates
    - Click events to view task details
    - Color-coded by status
+
+4. **Matrix View** (Eisenhower)
+   - 2×2 grid by Importance × Urgency.
+   - Drag tasks across quadrants to update flags.
+   - Multi-select + "Schedule This Week" auto-distributes selected
+     tasks across remaining weekdays, balancing load and front-loading
+     urgent items.
 
 ### 📝 Task Management
 
@@ -154,8 +161,33 @@ personal-planner/
 - `Due Date` (date)
 - `Weekdays` (select; No Weekdays + days of week)
 - `Todos` (rich_text; newline list with ✓ prefix for completed)
+- `Comments` (rich_text; newline-separated. Empty array clears.)
+- `Important` (checkbox; defaults to false)
+- `Urgent` (checkbox; defaults to false)
 
 Reads attempt heuristic matching by type if names differ.
+
+## ⏰ Daily Auto-Promotion (Cron)
+
+A daily Vercel cron at `/api/cron/daily-rollup` promotes tasks based on
+their Weekday field:
+
+- Tasks where `Weekday == today`  → "Doing Today"
+- Tasks where `Weekday == tomorrow` → "Doing Tomorrow"
+- "Doing Today" tasks that weren't completed STAY in "Doing Today"
+  (no auto-archive — only the user archives).
+
+Required env vars:
+- `CRON_SECRET`         (random secret, used as Bearer token)
+- `USER_TIMEZONE`       (IANA TZ name, default `America/Toronto`)
+
+Schedule defined in `vercel.json` (default `5 5 * * *` ≈ 01:05 ET).
+
+Manual dry-run from your terminal:
+```bash
+curl -H "Authorization: Bearer $CRON_SECRET" \
+  'http://localhost:3000/api/cron/daily-rollup?dry=1'
+```
 
 ## 🧪 Debug & Verification
 
