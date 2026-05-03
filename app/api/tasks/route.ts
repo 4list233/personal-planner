@@ -83,6 +83,10 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const now = new Date();
 
+    // SECURITY: Notion DB rows are filtered by `User Email` property — known
+    // multi-tenant data sharing risk if Notion property is missing on a row.
+    // Tracked separately; do not expand scope of this PR to fix.
+
     // Minimal shape; in a full implementation, validate with Zod
     const newTask = await createTaskInNotion({
       title: (body.title as string) || 'New Task',
@@ -93,6 +97,7 @@ export async function POST(request: NextRequest) {
       weekday: (body.weekday as any) || 'No Weekdays',
       daysUntilDue: 0,
       todoItems: Array.isArray(body.todoItems) ? body.todoItems : [],
+      comments: Array.isArray(body.comments) ? body.comments : [],
     }, user.email, user.uid); // Pass user email and ID
 
     return NextResponse.json({ task: newTask, success: true });
