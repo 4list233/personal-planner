@@ -26,11 +26,36 @@ export interface Task {
   weekday?: Weekday;
   todoItems?: TodoItem[];
   comments?: string[];
+  /** Eisenhower flags — user-set */
+  important?: boolean;
+  urgent?: boolean;
   source?: 'manual' | 'gemini-image' | 'gemini-text';
   queueId?: string;
   isDraft?: boolean;
   /** Local-only flag: server confirmation pending */
   pendingSync?: boolean;
+}
+
+export type Quadrant = 'Q1' | 'Q2' | 'Q3' | 'Q4';
+// Q1 = important + urgent
+// Q2 = important + !urgent
+// Q3 = !important + urgent
+// Q4 = !important + !urgent
+
+export const QUADRANT_LABEL: Record<Quadrant, string> = {
+  Q1: 'Do First',
+  Q2: 'Schedule',
+  Q3: 'Delegate / Quick',
+  Q4: 'Backlog',
+};
+
+export function quadrantOf(task: Pick<Task, 'important' | 'urgent'>): Quadrant {
+  const i = task.important === true;
+  const u = task.urgent === true;
+  if (i && u) return 'Q1';
+  if (i && !u) return 'Q2';
+  if (!i && u) return 'Q3';
+  return 'Q4';
 }
 
 export interface TodoItem {
@@ -39,7 +64,7 @@ export interface TodoItem {
   completed: boolean;
 }
 
-export type ViewType = 'board' | 'weekdays' | 'calendar';
+export type ViewType = 'board' | 'weekdays' | 'calendar' | 'matrix';
 
 export interface ViewState {
   currentView: ViewType;

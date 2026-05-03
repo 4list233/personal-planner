@@ -283,6 +283,12 @@ function notionPageToTask(page: any): Task {
     comments = commentsText.split('\n').map((s) => s.trim()).filter(Boolean);
   }
 
+  // Eisenhower flags — heuristic-match by name and checkbox type.
+  const importantProp = props['Important'] || props['important'] || findCheckboxByName(props, 'important');
+  const urgentProp = props['Urgent'] || props['urgent'] || findCheckboxByName(props, 'urgent');
+  const important = importantProp?.checkbox === true;
+  const urgent = urgentProp?.checkbox === true;
+
   return {
     id: page.id,
     title,
@@ -293,7 +299,18 @@ function notionPageToTask(page: any): Task {
     daysUntilDue: calculateDaysUntilDue(dueDate),
     todoItems: todos,
     comments,
+    important,
+    urgent,
   };
+}
+
+function findCheckboxByName(properties: any, namePart: string) {
+  for (const key of Object.keys(properties)) {
+    if (key.toLowerCase().includes(namePart) && properties[key]?.type === 'checkbox') {
+      return properties[key];
+    }
+  }
+  return undefined;
 }
 
 function findFirstPropOfType(properties: any, type: 'title' | 'select' | 'date' | 'rich_text') {
@@ -348,6 +365,14 @@ function taskToNotionProperties(task: Partial<Task>) {
     properties.Comments = {
       rich_text: commentsText ? [{ text: { content: commentsText } }] : [],
     };
+  }
+
+  if (task.important !== undefined) {
+    properties.Important = { checkbox: !!task.important };
+  }
+
+  if (task.urgent !== undefined) {
+    properties.Urgent = { checkbox: !!task.urgent };
   }
 
   return properties;

@@ -98,6 +98,8 @@ export async function POST(request: NextRequest) {
       daysUntilDue: 0,
       todoItems: Array.isArray(body.todoItems) ? body.todoItems : [],
       comments: Array.isArray(body.comments) ? body.comments : [],
+      important: typeof body.important === 'boolean' ? body.important : false,
+      urgent: typeof body.urgent === 'boolean' ? body.urgent : false,
     }, user.email, user.uid); // Pass user email and ID
 
     return NextResponse.json({ task: newTask, success: true });
