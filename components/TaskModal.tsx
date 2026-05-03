@@ -211,10 +211,18 @@ export default function TaskModal() {
                 <div className="text-sm text-gray-500 mb-1">Due Date</div>
                 <input
                   type="date"
+                  min="1970-01-01"
+                  max="2100-12-31"
                   value={selectedTask.dueDate || ''}
-                  onChange={(e) => updateTask(selectedTask.id, { dueDate: e.target.value })}
+                  onChange={(e) => {
+                    setDateError(null);
+                    updateTask(selectedTask.id, { dueDate: e.target.value });
+                  }}
                   className="text-sm font-medium text-gray-900 border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
+                {dateError && (
+                  <div className="mt-1 text-xs text-red-600">{dateError}</div>
+                )}
               </div>
             </div>
 
