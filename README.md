@@ -183,10 +183,28 @@ Required env vars:
 
 Schedule defined in `vercel.json` (default `5 5 * * *` ≈ 01:05 ET).
 
-Manual dry-run from your terminal:
+The route requires the `CRON_SECRET` Bearer token for **both dry-run
+and live** invocations — there is no anonymous access. Without it the
+endpoint returns `401 Unauthorized`.
+
+Manual dry-run (no writes — returns the planned breakdown as JSON):
 ```bash
+export CRON_SECRET=...   # the same secret set in your deployment
 curl -H "Authorization: Bearer $CRON_SECRET" \
   'http://localhost:3000/api/cron/daily-rollup?dry=1'
+```
+
+Manual live run (POST applies the changes):
+```bash
+curl -X POST -H "Authorization: Bearer $CRON_SECRET" \
+  'http://localhost:3000/api/cron/daily-rollup'
+```
+
+Verify auth is enforced:
+```bash
+curl -i -H "Authorization: Bearer wrong" \
+  'http://localhost:3000/api/cron/daily-rollup?dry=1'
+# → HTTP/1.1 401 Unauthorized
 ```
 
 ## 🧪 Debug & Verification
