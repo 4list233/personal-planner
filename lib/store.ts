@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { Task, ViewType } from './types';
 import { toast } from './toast';
+import { daysUntilDueInUserTz } from './time';
 
 // Auth token getter (set by AuthProvider in the app)
 let getAuthTokenFn: (() => Promise<string>) | null = null;
@@ -26,22 +27,9 @@ export async function getAuthHeaders(): Promise<HeadersInit> {
   return headers;
 }
 
-// Helper function to calculate days until due
+// Helper function to calculate days until due in the user's timezone.
 function calculateDaysUntilDue(dueDate?: string): number | undefined {
-  if (!dueDate) return undefined;
-
-  // Parse date as local timezone to avoid off-by-one errors
-  const dateStr = dueDate.split('T')[0]; // Get YYYY-MM-DD part
-  const [year, month, day] = dateStr.split('-').map(Number);
-  const due = new Date(year, month - 1, day); // Month is 0-indexed
-
-  const now = new Date();
-  now.setHours(0, 0, 0, 0); // Reset to start of day for accurate comparison
-
-  const diffTime = due.getTime() - now.getTime();
-  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-  return diffDays;
+  return daysUntilDueInUserTz(dueDate);
 }
 
 // Normalize a user-provided date. Reject malformed years (>4 digits) and
@@ -113,12 +101,17 @@ interface PlannerStore {
   isModalOpen: boolean;
   /** Multi-selection set used by the Matrix view. */
   selectedTaskIds: Set<string>;
+  /** True while a fetchTasks request is in flight — used to dedupe. */
+  isFetching: boolean;
+  /** Epoch ms of the last successful fetch — used to skip recent refetches. */
+  lastFetchedAt: number | null;
   setTasks: (tasks: Task[]) => void;
   addTask: (task: Task) => void;
   updateTask: (id: string, updates: Partial<Task>) => void;
   deleteTask: (id: string) => Promise<void> | void;
   submitTask: (id: string) => Promise<void>;
   submitPartial: (id: string, updates: Partial<Task>) => Promise<void>; // persist only provided fields
+  fetchTasks: (opts?: { force?: boolean }) => Promise<void>;
   setCurrentView: (view: ViewType) => void;
   setSelectedTask: (task: Task | null) => void;
   setIsModalOpen: (isOpen: boolean) => void;
@@ -129,6 +122,11 @@ interface PlannerStore {
     opts?: { concurrency?: number }
   ) => Promise<{ ok: number; failed: number }>;
 }
+
+// Module-scoped guards so React StrictMode's double-invoked effects can't
+// race two parallel fetches before the first one updates state.
+let inFlightFetch: Promise<void> | null = null;
+const FETCH_DEDUPE_MS = 5000;
 
 function setPendingSync(taskId: string, pending: boolean) {
   usePlannerStore.setState((state) => ({
@@ -159,7 +157,42 @@ export const usePlannerStore = create<PlannerStore>((set, get) => ({
   selectedTask: null,
   isModalOpen: false,
   selectedTaskIds: new Set<string>(),
+  isFetching: false,
+  lastFetchedAt: null,
   setTasks: (tasks) => set({ tasks }),
+  fetchTasks: async (opts = {}) => {
+    const { force = false } = opts;
+    const state = get();
+    const now = Date.now();
+    if (!force && state.lastFetchedAt && now - state.lastFetchedAt < FETCH_DEDUPE_MS) {
+      return;
+    }
+    if (inFlightFetch) {
+      return inFlightFetch;
+    }
+    set({ isFetching: true });
+    inFlightFetch = (async () => {
+      try {
+        const headers = await getAuthHeaders();
+        const res = await fetch('/api/tasks', { cache: 'no-store', headers });
+        if (!res.ok) {
+          const text = await res.text().catch(() => res.statusText);
+          throw new Error(text);
+        }
+        const data = await res.json();
+        const tasks = Array.isArray(data.tasks) ? data.tasks : [];
+        console.log(`✅ Loaded ${tasks.length} task(s) from Notion via API`);
+        set({ tasks, lastFetchedAt: Date.now() });
+      } catch (e) {
+        console.error('❌ Failed to load tasks from API:', e);
+        // Leave existing tasks in place on error.
+      } finally {
+        set({ isFetching: false });
+        inFlightFetch = null;
+      }
+    })();
+    return inFlightFetch;
+  },
   addTask: (task) => {
     set((state) => ({ tasks: [...state.tasks, task] }));
   },

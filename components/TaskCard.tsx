@@ -3,6 +3,7 @@
 import { Task, Quadrant, QUADRANT_LABEL, quadrantOf } from '@/lib/types';
 import { FileText, Calendar, AlertTriangle } from 'lucide-react';
 import { format } from 'date-fns';
+import { formatDaysUntilDue, daysUntilDueColorClass } from '@/lib/formatters';
 
 interface TaskCardProps {
   task: Task;
@@ -35,22 +36,6 @@ const QUADRANT_SHORT: Record<Quadrant, string> = {
 export default function TaskCard({ task, onClick, showQuadrantLabel = false }: TaskCardProps) {
   const quadrant = quadrantOf(task);
   const showQuadrant = task.important === true || task.urgent === true || showQuadrantLabel;
-  const getDaysUntilDueColor = (days?: number) => {
-    if (days === undefined) return 'text-gray-600';
-    if (days < 0) return 'text-red-600';
-    if (days === 0) return 'text-orange-600';
-    if (days <= 7) return 'text-yellow-600';
-    return 'text-gray-600';
-  };
-
-  const formatDaysUntilDue = (days?: number) => {
-    if (days === undefined) return '';
-    if (Math.abs(days) > 365) return days > 0 ? 'in 1+ year' : 'overdue 1+ year';
-    if (days === 0) return 'Due today';
-    if (days === 1) return 'Due tomorrow';
-    if (days < 0) return `overdue ${Math.abs(days)}d`;
-    return `in ${days} days`;
-  };
 
   const getWeekdayColor = (weekday?: string) => {
     if (!weekday || weekday === 'No Weekdays') return 'bg-blue-100 text-blue-700';
@@ -126,7 +111,7 @@ export default function TaskCard({ task, onClick, showQuadrantLabel = false }: T
       )}
 
       {task.daysUntilDue !== undefined && (
-        <div className={`text-xs font-medium mb-2 ${getDaysUntilDueColor(task.daysUntilDue)}`}>
+        <div className={`text-xs font-medium mb-2 ${daysUntilDueColorClass(task.daysUntilDue)}`}>
           {formatDaysUntilDue(task.daysUntilDue)}
         </div>
       )}

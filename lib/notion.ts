@@ -1,6 +1,7 @@
 // This file contains Notion API integration helpers
 import { Client } from '@notionhq/client';
 import { Task, TaskStatus, Weekday, TodoItem } from './types';
+import { daysUntilDueInUserTz } from './time';
 
 // Lazy initialization - check each time
 function getNotionClient() {
@@ -379,17 +380,12 @@ function taskToNotionProperties(task: Partial<Task>) {
 }
 
 /**
- * Calculate days until due date
+ * Calculate days until due date in the user's timezone (USER_TIMEZONE env,
+ * defaults to America/Toronto). UTC arithmetic gives the wrong day for
+ * tasks viewed in the evening ET — use the timezone-aware helper instead.
  */
 function calculateDaysUntilDue(dueDate?: string): number | undefined {
-  if (!dueDate) return undefined;
-  
-  const now = new Date();
-  const due = new Date(dueDate);
-  const diffTime = due.getTime() - now.getTime();
-  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-  
-  return diffDays;
+  return daysUntilDueInUserTz(dueDate);
 }
 
 /**

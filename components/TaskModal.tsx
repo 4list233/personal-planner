@@ -5,6 +5,7 @@ import { X, Calendar, Clock, MessageSquare, Star, Flame } from 'lucide-react';
 import { format } from 'date-fns';
 import { useEffect, useState } from 'react';
 import { TaskStatus, Weekday, TodoItem } from '@/lib/types';
+import { formatDaysUntilDue, daysUntilDueColorClass } from '@/lib/formatters';
 
 export default function TaskModal() {
   const { selectedTask, isModalOpen, setIsModalOpen, updateTask, deleteTask, submitTask } = usePlannerStore();
@@ -209,17 +210,26 @@ export default function TaskModal() {
               <Calendar size={18} className="text-gray-400 mt-1" />
               <div className="flex-1">
                 <div className="text-sm text-gray-500 mb-1">Due Date</div>
-                <input
-                  type="date"
-                  min="1970-01-01"
-                  max="2100-12-31"
-                  value={selectedTask.dueDate || ''}
-                  onChange={(e) => {
-                    setDateError(null);
-                    updateTask(selectedTask.id, { dueDate: e.target.value });
-                  }}
-                  className="text-sm font-medium text-gray-900 border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+                <div className="flex items-center gap-2 flex-wrap">
+                  <input
+                    type="date"
+                    min="1970-01-01"
+                    max="2100-12-31"
+                    value={selectedTask.dueDate || ''}
+                    onChange={(e) => {
+                      setDateError(null);
+                      updateTask(selectedTask.id, { dueDate: e.target.value });
+                    }}
+                    className="text-sm font-medium text-gray-900 border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  {selectedTask.daysUntilDue !== undefined && (
+                    <span
+                      className={`text-xs ${daysUntilDueColorClass(selectedTask.daysUntilDue)}`}
+                    >
+                      {formatDaysUntilDue(selectedTask.daysUntilDue)}
+                    </span>
+                  )}
+                </div>
                 {dateError && (
                   <div className="mt-1 text-xs text-red-600">{dateError}</div>
                 )}
@@ -300,18 +310,6 @@ export default function TaskModal() {
                 </select>
               </div>
             </div>
-
-            {selectedTask.daysUntilDue !== undefined && (
-              <div className="flex items-start gap-3">
-                <div className="w-[18px] h-[18px] flex items-center justify-center mt-1">
-                  Σ
-                </div>
-                <div className="flex-1">
-                  <div className="text-sm text-gray-500 mb-1">Days Until Due</div>
-                  <div className="text-sm font-medium text-gray-900">{selectedTask.daysUntilDue}</div>
-                </div>
-              </div>
-            )}
 
             <div className="flex items-start gap-3">
               <div className="w-[18px] h-[18px] flex items-center justify-center mt-1">
