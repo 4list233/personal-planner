@@ -1,15 +1,18 @@
 'use client';
 
 import { usePlannerStore } from '@/lib/store';
-import { X, Calendar, Clock, MessageSquare } from 'lucide-react';
+import { X, Calendar, Clock, MessageSquare, Star, Flame } from 'lucide-react';
 import { format } from 'date-fns';
 import { useEffect, useState } from 'react';
 import { TaskStatus, Weekday, TodoItem } from '@/lib/types';
 
 export default function TaskModal() {
   const { selectedTask, isModalOpen, setIsModalOpen, updateTask, deleteTask, submitTask } = usePlannerStore();
-  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState('');
+  const [titleError, setTitleError] = useState<string | null>(null);
+  const [dateError, setDateError] = useState<string | null>(null);
   const [newTodoText, setNewTodoText] = useState('');
+  const [newCommentText, setNewCommentText] = useState('');
 
   const dispatchModalAction = (action: 'submit' | 'cancel') => {
     if (!selectedTask) return;
@@ -21,11 +24,19 @@ export default function TaskModal() {
   };
 
   useEffect(() => {
-    // Auto-focus the title for freshly created drafts
-    if (selectedTask?.id.startsWith('temp-') && selectedTask?.title === 'New Task') {
-      setEditingTitle(true);
+    setTitleDraft(selectedTask?.title ?? '');
+    setTitleError(null);
+    setDateError(null);
+    setNewCommentText('');
+  }, [selectedTask?.id]);
+
+  const commitTitle = () => {
+    if (!selectedTask) return;
+    const trimmed = titleDraft.trim();
+    if (trimmed && trimmed !== selectedTask.title) {
+      updateTask(selectedTask.id, { title: trimmed });
     }
-  }, [selectedTask]);
+  };
 
   const handleClose = async () => {
     const isQueueDraft = Boolean(selectedTask?.queueId);
@@ -38,6 +49,26 @@ export default function TaskModal() {
 
   const handleSave = async () => {
     if (!selectedTask) return;
+    const trimmedTitle = titleDraft.trim();
+    if (!trimmedTitle || trimmedTitle === 'New Task') {
+      setTitleError('Title is required');
+      return;
+    }
+    if (selectedTask.dueDate) {
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(selectedTask.dueDate.split('T')[0]);
+      if (!m) {
+        setDateError('Date must be between 1970 and 2100');
+        return;
+      }
+      const y = Number(m[1]);
+      if (y < 1970 || y > 2100) {
+        setDateError('Date must be between 1970 and 2100');
+        return;
+      }
+    }
+    if (trimmedTitle !== selectedTask.title) {
+      updateTask(selectedTask.id, { title: trimmedTitle });
+    }
     await submitTask(selectedTask.id);
     dispatchModalAction('submit');
     setIsModalOpen(false);
@@ -135,32 +166,36 @@ export default function TaskModal() {
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
-          {editingTitle ? (
+        <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-start justify-between gap-3">
+          <div className="flex-1 min-w-0">
             <input
               type="text"
-              value={selectedTask.title}
-              onChange={(e) => updateTask(selectedTask.id, { title: e.target.value })}
-              onBlur={() => setEditingTitle(false)}
+              value={titleDraft}
+              onChange={(e) => {
+                setTitleDraft(e.target.value);
+                if (titleError) setTitleError(null);
+              }}
+              onBlur={commitTitle}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
-                  setEditingTitle(false);
+                  e.preventDefault();
+                  commitTitle();
+                  (e.target as HTMLInputElement).blur();
                 }
               }}
-              autoFocus
-              className="text-xl font-semibold text-gray-900 border-b-2 border-blue-500 focus:outline-none flex-1"
+              autoFocus={selectedTask.id.startsWith('temp-') && selectedTask.title === 'New Task'}
+              maxLength={500}
+              placeholder="Task title"
+              aria-label="Task title"
+              className="w-full text-xl font-semibold text-gray-900 bg-transparent border-b-2 border-transparent hover:border-gray-200 focus:border-blue-500 focus:outline-none px-0 line-clamp-2 max-w-full"
             />
-          ) : (
-            <h2
-              className="text-xl font-semibold text-gray-900 cursor-pointer hover:text-blue-600"
-              onClick={() => setEditingTitle(true)}
-            >
-              {selectedTask.title}
-            </h2>
-          )}
+            {titleError && (
+              <div className="mt-1 text-xs text-red-600">{titleError}</div>
+            )}
+          </div>
           <button
             onClick={() => void handleClose()}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"
           >
             <X size={20} className="text-gray-500" />
           </button>
@@ -176,10 +211,18 @@ export default function TaskModal() {
                 <div className="text-sm text-gray-500 mb-1">Due Date</div>
                 <input
                   type="date"
+                  min="1970-01-01"
+                  max="2100-12-31"
                   value={selectedTask.dueDate || ''}
-                  onChange={(e) => updateTask(selectedTask.id, { dueDate: e.target.value })}
+                  onChange={(e) => {
+                    setDateError(null);
+                    updateTask(selectedTask.id, { dueDate: e.target.value });
+                  }}
                   className="text-sm font-medium text-gray-900 border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
+                {dateError && (
+                  <div className="mt-1 text-xs text-red-600">{dateError}</div>
+                )}
               </div>
             </div>
 
@@ -189,6 +232,51 @@ export default function TaskModal() {
                 <div className="text-sm text-gray-500 mb-1">Date Created</div>
                 <div className="text-sm font-medium text-gray-900">
                   {format(new Date(selectedTask.dateCreated), 'MMMM dd, yyyy h:mm a')}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-start gap-3">
+              <Star size={18} className="text-gray-400 mt-1" />
+              <div className="flex-1">
+                <div className="text-sm text-gray-500 mb-2">Priority</div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      updateTask(selectedTask.id, { important: !selectedTask.important })
+                    }
+                    className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium border transition-colors ${
+                      selectedTask.important
+                        ? 'bg-amber-100 text-amber-800 border-amber-300'
+                        : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
+                    }`}
+                    aria-pressed={!!selectedTask.important}
+                  >
+                    <Star
+                      size={14}
+                      className={selectedTask.important ? 'fill-amber-500 text-amber-500' : ''}
+                    />
+                    Important
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      updateTask(selectedTask.id, { urgent: !selectedTask.urgent })
+                    }
+                    className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium border transition-colors ${
+                      selectedTask.urgent
+                        ? 'bg-red-100 text-red-800 border-red-300'
+                        : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
+                    }`}
+                    aria-pressed={!!selectedTask.urgent}
+                  >
+                    <Flame
+                      size={14}
+                      className={selectedTask.urgent ? 'fill-red-500 text-red-500' : ''}
+                    />
+                    Urgent
+                  </button>
                 </div>
               </div>
             </div>
@@ -252,15 +340,48 @@ export default function TaskModal() {
               <MessageSquare size={18} className="text-gray-400" />
               <h3 className="text-sm font-semibold text-gray-700">Comments</h3>
             </div>
+            {selectedTask.comments && selectedTask.comments.length > 0 && (
+              <div className="space-y-2 mb-3">
+                {selectedTask.comments.map((c, i) => (
+                  <div
+                    key={i}
+                    className="text-sm text-gray-700 bg-gray-50 rounded-lg px-3 py-2 break-words"
+                  >
+                    {c}
+                  </div>
+                ))}
+              </div>
+            )}
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white text-sm font-medium">
                 F
               </div>
               <input
                 type="text"
+                value={newCommentText}
+                onChange={(e) => setNewCommentText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && newCommentText.trim()) {
+                    e.preventDefault();
+                    const next = [...(selectedTask.comments || []), newCommentText.trim()];
+                    updateTask(selectedTask.id, { comments: next });
+                    setNewCommentText('');
+                  }
+                }}
                 placeholder="Add a comment..."
                 className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
+              <button
+                onClick={() => {
+                  if (!newCommentText.trim()) return;
+                  const next = [...(selectedTask.comments || []), newCommentText.trim()];
+                  updateTask(selectedTask.id, { comments: next });
+                  setNewCommentText('');
+                }}
+                className="text-sm text-blue-600 hover:text-blue-700 font-medium px-3 py-1 rounded hover:bg-blue-50 transition-colors"
+              >
+                Add
+              </button>
             </div>
           </div>
 

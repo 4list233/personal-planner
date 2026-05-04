@@ -2,7 +2,7 @@
 
 import { usePlannerStore } from '@/lib/store';
 import ViewSwitcher from './ViewSwitcher';
-import { Filter, ArrowUpDown, Search, Plus } from 'lucide-react';
+import { Filter, Search, Plus } from 'lucide-react';
 
 export default function DashboardHeader() {
   const { currentView, setCurrentView, addTask, setSelectedTask, setIsModalOpen } = usePlannerStore();
@@ -49,18 +49,18 @@ export default function DashboardHeader() {
           <ViewSwitcher currentView={currentView} onViewChange={setCurrentView} />
           
           <div className="flex items-center gap-2 flex-wrap">
-            <button className="flex items-center gap-2 px-3 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors">
-              <Search size={16} />
-              <span className="hidden sm:inline">Search</span>
-            </button>
-            <button className="flex items-center gap-2 px-3 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors">
-              <Filter size={16} />
-              <span className="hidden sm:inline">Filter</span>
-            </button>
-            <button className="flex items-center gap-2 px-3 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors">
-              <ArrowUpDown size={16} />
-              <span className="hidden sm:inline">Sort</span>
-            </button>
+            {process.env.NEXT_PUBLIC_ENABLE_SEARCH === '1' && (
+              <>
+                <button className="flex items-center gap-2 px-3 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors">
+                  <Search size={16} />
+                  <span className="hidden sm:inline">Search</span>
+                </button>
+                <button className="flex items-center gap-2 px-3 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors">
+                  <Filter size={16} />
+                  <span className="hidden sm:inline">Filter</span>
+                </button>
+              </>
+            )}
           </div>
         </div>
       </div>

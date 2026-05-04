@@ -1,7 +1,7 @@
 'use client';
 
 import { ViewType } from '@/lib/types';
-import { Calendar, LayoutGrid, Calendar as CalendarIcon } from 'lucide-react';
+import { Calendar, LayoutGrid, Calendar as CalendarIcon, Grid2x2 } from 'lucide-react';
 
 interface ViewSwitcherProps {
   currentView: ViewType;
@@ -13,6 +13,7 @@ export default function ViewSwitcher({ currentView, onViewChange }: ViewSwitcher
     { type: 'board', label: 'Board View', icon: <LayoutGrid size={16} /> },
     { type: 'weekdays', label: 'Weekdays View', icon: <Calendar size={16} /> },
     { type: 'calendar', label: 'Calendar', icon: <CalendarIcon size={16} /> },
+    { type: 'matrix', label: 'Matrix', icon: <Grid2x2 size={16} /> },
   ];
 
   return (

@@ -104,9 +104,25 @@ function DroppableColumn({ status, color, tasks, isCollapsed, onToggle, droppabl
     );
   }
 
+  const emptyHint =
+    status === 'Reminders'
+      ? 'Drop reminders here'
+      : status === 'Long Term Deadlines'
+        ? 'Drop long-term deadlines here'
+        : status === 'To Do'
+          ? 'Drop tasks here'
+          : status === 'Doing Today'
+            ? "Drop today's work here"
+            : status === 'Doing Tomorrow'
+              ? "Drop tomorrow's work here"
+              : 'Drop tasks here to archive';
+
   return (
     <div className="flex-shrink-0 w-full min-w-[240px] max-w-[280px]">
-      <div ref={setNodeRef} className={`rounded-lg ${color} p-4 min-h-[300px]`}>
+      <div
+        ref={setNodeRef}
+        className={`rounded-lg ${color} p-4 min-h-[140px] md:min-h-[300px]`}
+      >
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-semibold text-gray-900 text-sm flex items-center gap-2">
             {isArchived && <Archive size={16} className="text-gray-600" />}
@@ -123,10 +139,15 @@ function DroppableColumn({ status, color, tasks, isCollapsed, onToggle, droppabl
         </div>
 
         <SortableContext items={tasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
-          <div className="space-y-3 min-h-[200px]">
+          <div className="space-y-3 min-h-[80px] md:min-h-[200px]">
             {tasks.map((task) => (
               <SortableTaskCard key={task.id} task={task} />
             ))}
+            {tasks.length === 0 && (
+              <div className="text-xs text-gray-500 text-center py-4 select-none">
+                {emptyHint}
+              </div>
+            )}
           </div>
         </SortableContext>
       </div>

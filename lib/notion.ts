@@ -254,7 +254,8 @@ function notionPageToTask(page: any): Task {
   const statusProp = props['Status'] || findFirstPropOfType(props, 'select');
   const dueProp = props['Due Date'] || props['Due'] || findFirstPropOfType(props, 'date');
   const weekdayProp = props['Weekdays'] || props['Weekday'] || undefined;
-  const todosProp = props['Todos'] || props['To-dos'] || findFirstPropOfType(props, 'rich_text');
+  const todosProp = props['Todos'] || props['To-dos'] || undefined;
+  const commentsProp = props['Comments'] || props['Notes'] || undefined;
 
   // Parse todos from first rich_text block as newline-separated list if present
   let todos: TodoItem[] = [];
@@ -275,6 +276,19 @@ function notionPageToTask(page: any): Task {
   const status = (statusProp?.select?.name as TaskStatus) || 'To Do';
   const weekday = (weekdayProp?.select?.name as Weekday) || 'No Weekdays';
 
+  // Parse comments from a rich_text property: each newline is a comment.
+  let comments: string[] = [];
+  const commentsText: string = commentsProp?.rich_text?.map((rt: any) => rt.plain_text || '').join('') || '';
+  if (commentsText) {
+    comments = commentsText.split('\n').map((s) => s.trim()).filter(Boolean);
+  }
+
+  // Eisenhower flags — heuristic-match by name and checkbox type.
+  const importantProp = props['Important'] || props['important'] || findCheckboxByName(props, 'important');
+  const urgentProp = props['Urgent'] || props['urgent'] || findCheckboxByName(props, 'urgent');
+  const important = importantProp?.checkbox === true;
+  const urgent = urgentProp?.checkbox === true;
+
   return {
     id: page.id,
     title,
@@ -284,7 +298,19 @@ function notionPageToTask(page: any): Task {
     weekday,
     daysUntilDue: calculateDaysUntilDue(dueDate),
     todoItems: todos,
+    comments,
+    important,
+    urgent,
   };
+}
+
+function findCheckboxByName(properties: any, namePart: string) {
+  for (const key of Object.keys(properties)) {
+    if (key.toLowerCase().includes(namePart) && properties[key]?.type === 'checkbox') {
+      return properties[key];
+    }
+  }
+  return undefined;
 }
 
 function findFirstPropOfType(properties: any, type: 'title' | 'select' | 'date' | 'rich_text') {
@@ -332,7 +358,23 @@ function taskToNotionProperties(task: Partial<Task>) {
       rich_text: [{ text: { content: todosText } }],
     };
   }
-  
+
+  if (task.comments !== undefined) {
+    // Store comments as a single newline-separated rich_text block.
+    const commentsText = task.comments.join('\n');
+    properties.Comments = {
+      rich_text: commentsText ? [{ text: { content: commentsText } }] : [],
+    };
+  }
+
+  if (task.important !== undefined) {
+    properties.Important = { checkbox: !!task.important };
+  }
+
+  if (task.urgent !== undefined) {
+    properties.Urgent = { checkbox: !!task.urgent };
+  }
+
   return properties;
 }
 
