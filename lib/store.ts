@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { Task, ViewType } from './types';
 import { toast } from './toast';
+import { daysUntilDueInUserTz } from './time';
 
 // Auth token getter (set by AuthProvider in the app)
 let getAuthTokenFn: (() => Promise<string>) | null = null;
@@ -26,22 +27,9 @@ export async function getAuthHeaders(): Promise<HeadersInit> {
   return headers;
 }
 
-// Helper function to calculate days until due
+// Helper function to calculate days until due in the user's timezone.
 function calculateDaysUntilDue(dueDate?: string): number | undefined {
-  if (!dueDate) return undefined;
-
-  // Parse date as local timezone to avoid off-by-one errors
-  const dateStr = dueDate.split('T')[0]; // Get YYYY-MM-DD part
-  const [year, month, day] = dateStr.split('-').map(Number);
-  const due = new Date(year, month - 1, day); // Month is 0-indexed
-
-  const now = new Date();
-  now.setHours(0, 0, 0, 0); // Reset to start of day for accurate comparison
-
-  const diffTime = due.getTime() - now.getTime();
-  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-  return diffDays;
+  return daysUntilDueInUserTz(dueDate);
 }
 
 // Normalize a user-provided date. Reject malformed years (>4 digits) and
