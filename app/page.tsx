@@ -28,9 +28,10 @@ const VIEW_TITLES: Record<string, string> = {
 export default function Home() {
   const router = useRouter();
   const { user, loading: authLoading, getIdToken } = useAuth();
-  const { currentView, setTasks } = usePlannerStore();
+  const currentView = usePlannerStore((s) => s.currentView);
+  const fetchTasks = usePlannerStore((s) => s.fetchTasks);
+  const lastFetchedAt = usePlannerStore((s) => s.lastFetchedAt);
   const [mounted, setMounted] = useState(false);
-  const [loading, setLoading] = useState(true);
 
   // Auth guard: redirect to login if not authenticated
   useEffect(() => {
@@ -39,12 +40,17 @@ export default function Home() {
     }
   }, [user, authLoading, router]);
 
-  // Set up auth token getter for store
+  // Set up auth token getter for the store. getIdToken is recreated on every
+  // AuthProvider render so we register it via a ref-stable user id dependency
+  // and read the latest function inside the store call instead.
   useEffect(() => {
     if (user) {
       setAuthTokenGetter(getIdToken);
     }
-  }, [user, getIdToken]);
+    // intentionally not depending on getIdToken — it's recreated each render
+    // and would cause this to re-run on every render of AuthProvider.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.uid]);
 
   // Update document title to reflect the active view
   useEffect(() => {
@@ -55,37 +61,17 @@ export default function Home() {
 
   useEffect(() => {
     setMounted(true);
-    
-    const loadTasks = async () => {
-      // Don't load tasks if not authenticated
-      if (!user) {
-        setLoading(false);
-        return;
-      }
+  }, []);
 
-      try {
-        const token = await getIdToken();
-        const res = await fetch('/api/tasks', { 
-          cache: 'no-store',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-          },
-        });
-        if (!res.ok) throw new Error(await res.text());
-        const data = await res.json();
-        const tasks = Array.isArray(data.tasks) ? data.tasks : [];
-        console.log(`✅ Loaded ${tasks.length} task(s) from Notion via API`);
-        setTasks(tasks);
-      } catch (error) {
-        console.error('❌ Failed to load tasks from API:', error);
-        setTasks([]);
-      } finally {
-        setLoading(false);
-      }
-    };
-    
-    loadTasks();
-  }, [user, getIdToken, setTasks]);
+  // Single source of truth for the initial fetch: this effect, dedupe-guarded
+  // by the store. Re-runs only when the signed-in user actually changes.
+  useEffect(() => {
+    if (!user) return;
+    fetchTasks();
+  }, [user?.uid, fetchTasks]);
+
+  // Loading until we've completed at least one fetch for this user.
+  const loading = !!user && lastFetchedAt === null;
 
   // Show loading state while checking auth or loading tasks
   if (!mounted || authLoading || loading) {
