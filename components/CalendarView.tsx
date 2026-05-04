@@ -3,6 +3,7 @@
 import { usePlannerStore } from '@/lib/store';
 import { useEffect, useMemo, useState } from 'react';
 import { format } from 'date-fns';
+import { partitionTasksForCalendar } from '@/lib/calendar-utils';
 
 export default function CalendarView() {
   const { tasks, setSelectedTask, setIsModalOpen, updateTask, submitPartial } = usePlannerStore();
@@ -13,7 +14,6 @@ export default function CalendarView() {
   const [showOutOfRange, setShowOutOfRange] = useState(false);
 
   useEffect(() => {
-    // Dynamically import FullCalendar to avoid SSR issues
     Promise.all([
       import('@fullcalendar/react'),
       import('@fullcalendar/daygrid'),
@@ -25,7 +25,43 @@ export default function CalendarView() {
     });
   }, []);
 
-  if (!FullCalendar || !dayGridPlugin || !interactionPlugin) {
+  const { valid, outOfSaneRange } = useMemo(
+    () => partitionTasksForCalendar(tasks),
+    [tasks]
+  );
+
+  const events = useMemo(
+    () =>
+      valid.map(({ task }) => ({
+        id: task.id,
+        title: task.title,
+        date: task.dueDate,
+        backgroundColor: getEventColor(task.status),
+        borderColor: getEventColor(task.status),
+        extendedProps: { task },
+      })),
+    [valid]
+  );
+
+  const outOfRangeTasks = useMemo(() => {
+    const fromSane = outOfSaneRange;
+    if (!viewRange) return fromSane;
+    const fromView = valid
+      .filter(({ date }) => date < viewRange.start || date >= viewRange.end)
+      .map(({ task }) => task);
+    return [...fromView, ...fromSane];
+  }, [valid, outOfSaneRange, viewRange]);
+
+  const calendarReady = FullCalendar && dayGridPlugin && interactionPlugin;
+
+  const handleEventDrop = (info: any) => {
+    const taskId = info.event.id;
+    const newDate = info.event.startStr;
+    updateTask(taskId, { dueDate: newDate });
+    submitPartial(taskId, { dueDate: newDate });
+  };
+
+  if (!calendarReady) {
     return (
       <div className="bg-white rounded-lg border border-gray-200 p-6">
         <div className="flex items-center justify-center h-96">
@@ -34,47 +70,6 @@ export default function CalendarView() {
       </div>
     );
   }
-
-  const events = tasks.map((task) => ({
-    id: task.id,
-    title: task.title,
-    date: task.dueDate,
-    backgroundColor: getEventColor(task.status),
-    borderColor: getEventColor(task.status),
-    extendedProps: {
-      task,
-    },
-  }));
-
-  function getEventColor(status: string) {
-    const colors: Record<string, string> = {
-      'Reminders': '#9333ea',
-      'Long Term Deadlines': '#ec4899',
-      'To Do': '#f59e0b',
-      'Doing Today': '#10b981',
-      'Doing Tomorrow': '#eab308',
-      'Archived': '#6b7280',
-    };
-    return colors[status] || '#6b7280';
-  }
-
-  const handleEventDrop = (info: any) => {
-    const taskId = info.event.id;
-    const newDate = info.event.startStr;
-
-    updateTask(taskId, { dueDate: newDate });
-    submitPartial(taskId, { dueDate: newDate });
-  };
-
-  const outOfRangeTasks = useMemo(() => {
-    if (!viewRange) return [];
-    return tasks.filter((t) => {
-      if (!t.dueDate) return false;
-      const d = new Date(t.dueDate);
-      if (Number.isNaN(d.getTime())) return false;
-      return d < viewRange.start || d >= viewRange.end;
-    });
-  }, [tasks, viewRange]);
 
   return (
     <div className="bg-white rounded-lg border border-gray-200 p-6">
@@ -122,7 +117,12 @@ export default function CalendarView() {
                 >
                   <div className="text-sm font-medium text-gray-900 truncate">{t.title}</div>
                   <div className="text-xs text-gray-500">
-                    {t.dueDate ? format(new Date(t.dueDate), 'MMM d, yyyy') : ''}
+                    {(() => {
+                      if (!t.dueDate) return '';
+                      const d = new Date(t.dueDate);
+                      if (Number.isNaN(d.getTime())) return t.dueDate;
+                      return format(d, 'MMM d, yyyy');
+                    })()}
                   </div>
                 </li>
               ))}
@@ -157,7 +157,7 @@ export default function CalendarView() {
         eventContent={(arg: any) => {
           const task = arg.event.extendedProps.task;
           const weekday = task.weekday || 'No Weekdays';
-          
+
           return (
             <div className="p-1 text-xs overflow-hidden">
               <div className="font-medium truncate">{arg.event.title}</div>
@@ -170,4 +170,16 @@ export default function CalendarView() {
       />
     </div>
   );
+}
+
+function getEventColor(status: string) {
+  const colors: Record<string, string> = {
+    'Reminders': '#9333ea',
+    'Long Term Deadlines': '#ec4899',
+    'To Do': '#f59e0b',
+    'Doing Today': '#10b981',
+    'Doing Tomorrow': '#eab308',
+    'Archived': '#6b7280',
+  };
+  return colors[status] || '#6b7280';
 }

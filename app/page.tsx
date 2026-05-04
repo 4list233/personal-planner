@@ -9,6 +9,7 @@ import dynamic from 'next/dynamic';
 import { usePlannerStore, setAuthTokenGetter } from '@/lib/store';
 import { useAuth } from '@/lib/auth-context';
 import DashboardHeader from '@/components/DashboardHeader';
+import ViewErrorBoundary from '@/components/ViewErrorBoundary';
 
 // Lazy load views to avoid compilation hang
 const BoardView = dynamic(() => import('@/components/BoardView'), { ssr: false });
@@ -16,6 +17,13 @@ const WeekdaysView = dynamic(() => import('@/components/WeekdaysView'), { ssr: f
 const CalendarView = dynamic(() => import('@/components/CalendarView'), { ssr: false });
 const MatrixView = dynamic(() => import('@/components/MatrixView'), { ssr: false });
 const TaskModal = dynamic(() => import('@/components/TaskModal'), { ssr: false });
+
+const VIEW_TITLES: Record<string, string> = {
+  board: 'Personal Planner',
+  weekdays: 'Weekdays — Personal Planner',
+  calendar: 'Calendar — Personal Planner',
+  matrix: 'Matrix — Personal Planner',
+};
 
 export default function Home() {
   const router = useRouter();
@@ -40,14 +48,8 @@ export default function Home() {
 
   // Update document title to reflect the active view
   useEffect(() => {
-    const labels: Record<string, string> = {
-      board: 'Personal Planner',
-      weekdays: 'Weekdays — Personal Planner',
-      calendar: 'Calendar — Personal Planner',
-      matrix: 'Matrix — Personal Planner',
-    };
     if (typeof document !== 'undefined') {
-      document.title = labels[currentView] ?? 'Personal Planner';
+      document.title = VIEW_TITLES[currentView] ?? 'Personal Planner';
     }
   }, [currentView]);
 
@@ -108,10 +110,18 @@ export default function Home() {
       <DashboardHeader />
       
       <main className="max-w-[100vw] mx-auto px-4 py-4 overflow-x-hidden">
-        {currentView === 'board' && <BoardView />}
-        {currentView === 'weekdays' && <WeekdaysView />}
-        {currentView === 'calendar' && <CalendarView />}
-        {currentView === 'matrix' && <MatrixView />}
+        <ViewErrorBoundary
+          key={currentView}
+          viewName={
+            currentView.charAt(0).toUpperCase() + currentView.slice(1)
+          }
+          title={VIEW_TITLES[currentView] ?? 'Personal Planner'}
+        >
+          {currentView === 'board' && <BoardView />}
+          {currentView === 'weekdays' && <WeekdaysView />}
+          {currentView === 'calendar' && <CalendarView />}
+          {currentView === 'matrix' && <MatrixView />}
+        </ViewErrorBoundary>
       </main>
 
       <TaskModal />
