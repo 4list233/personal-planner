@@ -2,7 +2,7 @@
 
 import { Task, Quadrant, QUADRANT_LABEL, quadrantOf } from '@/lib/types';
 import { FileText, Calendar, AlertTriangle } from 'lucide-react';
-import { format } from 'date-fns';
+import { formatDueDateLocal } from '@/lib/formatters';
 import { formatDaysUntilDue, daysUntilDueColorClass } from '@/lib/formatters';
 
 interface TaskCardProps {
@@ -10,6 +10,8 @@ interface TaskCardProps {
   onClick?: () => void;
   /** When true, shows the full quadrant label (e.g. on the Matrix view) */
   showQuadrantLabel?: boolean;
+  /** Visual treatment when this card is being rendered inside <DragOverlay>. */
+  dragging?: boolean;
 }
 
 const QUADRANT_DOT_COLOR: Record<Quadrant, string> = {
@@ -33,7 +35,7 @@ const QUADRANT_SHORT: Record<Quadrant, string> = {
   Q4: 'Backlog',
 };
 
-export default function TaskCard({ task, onClick, showQuadrantLabel = false }: TaskCardProps) {
+export default function TaskCard({ task, onClick, showQuadrantLabel = false, dragging = false }: TaskCardProps) {
   const quadrant = quadrantOf(task);
   const showQuadrant = task.important === true || task.urgent === true || showQuadrantLabel;
 
@@ -66,7 +68,10 @@ export default function TaskCard({ task, onClick, showQuadrantLabel = false }: T
   return (
     <div
       onClick={onClick}
-      className="relative bg-white border border-gray-200 rounded-lg p-3 hover:shadow-md transition-shadow cursor-pointer group"
+      className={
+        'relative bg-white border border-gray-200 rounded-lg p-3 hover:shadow-md transition-shadow cursor-pointer group ' +
+        (dragging ? 'opacity-90 shadow-xl ring-1 ring-blue-300' : '')
+      }
     >
       {showQuadrant && (
         <div className="absolute top-2 right-2 flex items-center gap-1">
@@ -100,13 +105,7 @@ export default function TaskCard({ task, onClick, showQuadrantLabel = false }: T
       {task.dueDate && (
         <div className="text-xs text-gray-500 mb-2 flex items-center gap-1">
           <Calendar size={12} />
-          {(() => {
-            try {
-              return format(new Date(task.dueDate), 'MMM d, yyyy');
-            } catch {
-              return task.dueDate;
-            }
-          })()}
+          {formatDueDateLocal(task.dueDate)}
         </div>
       )}
 
