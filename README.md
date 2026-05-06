@@ -31,6 +31,22 @@ Live deployment integrates directly with your Notion database (no mock tasks). D
    - Multi-select + "Schedule This Week" auto-distributes selected
      tasks across remaining weekdays, balancing load and front-loading
      urgent items.
+   - **"Auto-Plan This Week"** distributes every eligible task (or only
+     the multi-selected ones) across the remainder of the week using an
+     **urgent-first / important-late** ordering rule:
+     - **Q1 (urgent + important)** and **Q3 (urgent only)** are placed
+       on the earliest available days so urgent fires get cleared first.
+     - **Q2 (important, not urgent)** is biased toward the late half of
+       the week so it doesn't crowd out urgent items.
+     - **Q4 (Backlog)** is balanced by a Gemini consultation that
+       considers per-day load, task title weight, and time-sensitivity.
+     - Hard `dueDate` overrides quadrant heuristics; overdue tasks land
+       on today, in-week due dates land on their date, future-week due
+       dates are left untouched. Tasks already in `Doing Today`,
+       `Doing Tomorrow`, or `Archived` are never disturbed by an
+       unselected run.
+   - Per-day cap defaults to 5 tasks/day; configurable via
+     `NEXT_PUBLIC_MAX_TASKS_PER_DAY`.
 
 ### 📝 Task Management
 
