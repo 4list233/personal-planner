@@ -9,7 +9,6 @@ import {
   DragEndEvent,
   DragOverlay,
   DragStartEvent,
-  closestCorners,
   PointerSensor,
   useSensor,
   useSensors,
@@ -18,6 +17,7 @@ import {
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import { columnCollisionDetection } from '@/lib/dnd';
 import { useState } from 'react';
 
 const weekdays: { day: Weekday; color: string }[] = [
@@ -57,30 +57,39 @@ function SortableTaskCard({ task }: { task: Task }) {
 }
 
 function DroppableWeekday({ day, color, tasks }: { day: Weekday; color: string; tasks: Task[] }) {
-  const { setNodeRef } = useDroppable({
+  const { setNodeRef, isOver } = useDroppable({
     id: day,
   });
 
   return (
-    <div ref={setNodeRef} className="flex flex-col">
-      <div className={`rounded-lg ${color} p-4`}>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="font-semibold text-gray-900 text-sm flex items-center gap-2">
-            {day === 'No Weekdays' ? '🔵 No Weekdays' : `● ${day}`}
-            <span className="bg-white text-gray-600 text-xs px-2 py-0.5 rounded-full">
-              {tasks.length}
-            </span>
-          </h2>
-        </div>
-
-        <SortableContext items={tasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
-          <div className="space-y-3 min-h-[200px]">
-            {tasks.map((task) => (
-              <SortableTaskCard key={task.id} task={task} />
-            ))}
-          </div>
-        </SortableContext>
+    <div
+      ref={setNodeRef}
+      className={
+        `flex flex-col rounded-lg ${color} p-3 min-h-[160px] md:min-h-[200px] transition ` +
+        (isOver ? 'ring-2 ring-blue-500 ring-offset-2 brightness-105' : '')
+      }
+    >
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="font-semibold text-gray-900 text-sm flex items-center gap-2">
+          {day === 'No Weekdays' ? '🔵 No Weekdays' : `● ${day}`}
+          <span className="bg-white text-gray-600 text-xs px-2 py-0.5 rounded-full">
+            {tasks.length}
+          </span>
+        </h2>
       </div>
+
+      <SortableContext items={tasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
+        <div className="space-y-3 flex-1">
+          {tasks.map((task) => (
+            <SortableTaskCard key={task.id} task={task} />
+          ))}
+          {tasks.length === 0 && (
+            <div className="text-xs text-gray-500 text-center py-6 select-none">
+              Drop tasks here
+            </div>
+          )}
+        </div>
+      </SortableContext>
     </div>
   );
 }
@@ -92,7 +101,7 @@ export default function WeekdaysView() {
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        distance: 8,
+        distance: 6,
       },
     })
   );
@@ -163,11 +172,12 @@ export default function WeekdaysView() {
   return (
     <DndContext
       sensors={sensors}
-      collisionDetection={closestCorners}
+      collisionDetection={columnCollisionDetection}
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
+      onDragCancel={() => setActiveTask(null)}
     >
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8 gap-3">
         {weekdays.map(({ day, color }) => {
           const dayTasks = getTasksByWeekday(day);
           return (
@@ -181,12 +191,8 @@ export default function WeekdaysView() {
         })}
       </div>
 
-      <DragOverlay>
-        {activeTask ? (
-          <div className="opacity-90">
-            <TaskCard task={activeTask} />
-          </div>
-        ) : null}
+      <DragOverlay dropAnimation={null}>
+        {activeTask ? <TaskCard task={activeTask} dragging /> : null}
       </DragOverlay>
     </DndContext>
   );

@@ -19,6 +19,28 @@ export function formatDaysUntilDue(days?: number): string {
   return `in ${days} days`;
 }
 
+/**
+ * Format an ISO due date string ("YYYY-MM-DD" or full ISO timestamp) as a
+ * human-readable label without timezone drift. Parses the YYYY-MM-DD
+ * portion as a *local* date so EDT renderers don't show the previous day
+ * when the input is UTC midnight.
+ */
+export function formatDueDateLocal(iso: string): string {
+  if (!iso) return '';
+  const datePart = iso.slice(0, 10);
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(datePart);
+  if (!m) return iso;
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  if (!Number.isFinite(y) || !Number.isFinite(mo) || !Number.isFinite(d)) return iso;
+  return new Date(y, mo - 1, d).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
 export function daysUntilDueColorClass(days?: number): string {
   if (days === undefined || Number.isNaN(days)) return 'text-gray-600';
   if (days < 0) return 'text-red-600';

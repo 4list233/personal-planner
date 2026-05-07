@@ -1,23 +1,25 @@
 'use client';
 
-import { usePlannerStore } from '@/lib/store';
+import { usePlannerStore, getAuthHeaders } from '@/lib/store';
 import { Task, Quadrant, QUADRANT_LABEL, quadrantOf } from '@/lib/types';
 import TaskCard from './TaskCard';
 import { toast } from '@/lib/toast';
 import { scheduleThisWeek, summarizeSchedule } from '@/lib/scheduling';
-import { Check, X, CalendarDays, Archive } from 'lucide-react';
+import { autoPlanThisWeek, summarizeAutoPlan } from '@/lib/auto-plan';
+import { callBacklogGemini } from '@/lib/auto-plan-gemini';
+import { Check, X, CalendarDays, Archive, Sparkles } from 'lucide-react';
 import {
   DndContext,
   DragEndEvent,
   DragOverlay,
   DragStartEvent,
-  closestCorners,
   PointerSensor,
   useSensor,
   useSensors,
   useDroppable,
 } from '@dnd-kit/core';
 import { useDraggable } from '@dnd-kit/core';
+import { columnCollisionDetection } from '@/lib/dnd';
 import { useMemo, useState } from 'react';
 
 const QUADRANT_TONE: Record<Quadrant, { bg: string; border: string; title: string }> = {
@@ -95,20 +97,28 @@ function DroppableQuadrant({
   tasks,
   selectedIds,
   onToggleSelection,
+  isDragActive,
+  isHoverTarget,
 }: {
   quadrant: Quadrant;
   tasks: Task[];
   selectedIds: Set<string>;
   onToggleSelection: (id: string) => void;
+  isDragActive: boolean;
+  isHoverTarget: boolean;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `matrix-${quadrant}` });
   const tone = QUADRANT_TONE[quadrant];
+  const dimNonTarget = isDragActive && !isHoverTarget && !isOver;
   return (
     <div
       ref={setNodeRef}
-      className={`rounded-lg border-2 ${tone.bg} ${
-        isOver ? 'border-blue-400' : tone.border
-      } p-4 min-h-[260px] flex flex-col`}
+      className={
+        `relative rounded-lg border-2 ${tone.bg} ${
+          isOver ? 'border-blue-500 ring-2 ring-blue-500 ring-offset-2 brightness-105' : tone.border
+        } p-4 min-h-[160px] md:min-h-[260px] flex flex-col transition ` +
+        (dimNonTarget ? 'opacity-70' : '')
+      }
     >
       <div className="flex items-center justify-between mb-3">
         <h2 className={`text-sm font-semibold ${tone.title}`}>
@@ -150,10 +160,12 @@ export default function MatrixView() {
     setCurrentView,
   } = usePlannerStore();
   const [activeTask, setActiveTask] = useState<Task | null>(null);
+  const [hoverQuadrant, setHoverQuadrant] = useState<Quadrant | null>(null);
   const [isScheduling, setIsScheduling] = useState(false);
+  const [isAutoPlanning, setIsAutoPlanning] = useState(false);
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
   );
 
   const visibleTasks = useMemo(
@@ -177,9 +189,19 @@ export default function MatrixView() {
     if (t) setActiveTask(t);
   };
 
+  const handleDragOver = (event: { over: { id: string | number } | null }) => {
+    const overId = event.over ? String(event.over.id) : '';
+    if (overId.startsWith('matrix-')) {
+      setHoverQuadrant(overId.slice('matrix-'.length) as Quadrant);
+    } else {
+      setHoverQuadrant(null);
+    }
+  };
+
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     setActiveTask(null);
+    setHoverQuadrant(null);
     if (!over) return;
     const overId = String(over.id);
     if (!overId.startsWith('matrix-')) return;
@@ -229,6 +251,77 @@ export default function MatrixView() {
     }
   };
 
+  const handleAutoPlan = async () => {
+    if (isAutoPlanning) return;
+    setIsAutoPlanning(true);
+    const maxPerDay = Number(process.env.NEXT_PUBLIC_MAX_TASKS_PER_DAY) || 5;
+    const today = new Date();
+    let infoToastId: string | null = null;
+    let geminiAvailable = true;
+    try {
+      const callGemini = async (payload: Parameters<typeof callBacklogGemini>[0]) => {
+        if (!infoToastId) {
+          infoToastId = toast.info('Consulting Gemini for backlog placement…');
+        }
+        try {
+          const headers = await getAuthHeaders();
+          return await callBacklogGemini(payload, headers);
+        } catch (err) {
+          geminiAvailable = false;
+          throw err;
+        }
+      };
+
+      const result = await autoPlanThisWeek({
+        tasks,
+        today,
+        maxPerDay,
+        callGemini,
+        selectedTaskIds: selectedTaskIds.size > 0 ? selectedTaskIds : undefined,
+      });
+
+      if (result.assignments.size === 0) {
+        toast.info('Nothing to plan — all eligible tasks already have a day.');
+        return;
+      }
+
+      // Optimistic local update.
+      result.assignments.forEach((a, id) => {
+        updateTask(id, { weekday: a.weekday, status: a.status });
+      });
+
+      const updates = Array.from(result.assignments.entries()).map(([id, a]) => ({
+        id,
+        patch: { weekday: a.weekday, status: a.status } as Partial<Task>,
+      }));
+      const persistResult = await bulkUpdate(updates, { concurrency: 3 });
+
+      const summary = summarizeAutoPlan(result, today);
+      const breakdown = `${summary.today} today, ${summary.tomorrow} tomorrow, ${summary.later} later this week`;
+      const reasoning = result.geminiReasoning ? ` Gemini: "${result.geminiReasoning}"` : '';
+      const fallbackHint = !geminiAvailable && !result.geminiConsulted
+        ? ' Gemini unavailable, used round-robin.'
+        : '';
+
+      if (persistResult.failed === 0) {
+        toast.success(
+          `Planned ${summary.total} task${summary.total === 1 ? '' : 's'}: ${breakdown}.${reasoning}${fallbackHint}`
+        );
+      } else {
+        toast.error(
+          `Planned ${persistResult.ok}, ${persistResult.failed} failed. ${breakdown}.${fallbackHint}`
+        );
+      }
+      clearSelection();
+      setCurrentView('weekdays');
+    } catch (err) {
+      console.error('Auto-plan failed:', err);
+      toast.error("Auto-plan failed. Try again or use Schedule This Week.");
+    } finally {
+      setIsAutoPlanning(false);
+    }
+  };
+
   const handleMarkDone = async () => {
     if (selectedTasks.length === 0) return;
     selectedTasks.forEach((t) => updateTask(t.id, { status: 'Archived' }));
@@ -249,11 +342,31 @@ export default function MatrixView() {
 
   return (
     <div className="relative">
+      <div className="flex items-center justify-end mb-3">
+        <button
+          onClick={handleAutoPlan}
+          disabled={isAutoPlanning}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-violet-600 text-white rounded-lg hover:bg-violet-700 disabled:opacity-60"
+          title={
+            selectedTaskIds.size > 0
+              ? 'Plan only the selected tasks across the rest of the week'
+              : 'Plan every eligible task across the rest of the week'
+          }
+        >
+          <Sparkles size={14} />
+          {isAutoPlanning ? 'Planning…' : 'Auto-Plan This Week'}
+        </button>
+      </div>
       <DndContext
         sensors={sensors}
-        collisionDetection={closestCorners}
+        collisionDetection={columnCollisionDetection}
         onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
+        onDragCancel={() => {
+          setActiveTask(null);
+          setHoverQuadrant(null);
+        }}
       >
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {QUADRANT_ORDER.map((q) => (
@@ -263,16 +376,14 @@ export default function MatrixView() {
               tasks={tasksByQuadrant[q]}
               selectedIds={selectedTaskIds}
               onToggleSelection={toggleSelection}
+              isDragActive={activeTask !== null}
+              isHoverTarget={hoverQuadrant === q}
             />
           ))}
         </div>
 
-        <DragOverlay>
-          {activeTask ? (
-            <div className="opacity-90">
-              <TaskCard task={activeTask} showQuadrantLabel />
-            </div>
-          ) : null}
+        <DragOverlay dropAnimation={null}>
+          {activeTask ? <TaskCard task={activeTask} showQuadrantLabel dragging /> : null}
         </DragOverlay>
       </DndContext>
 
@@ -290,6 +401,14 @@ export default function MatrixView() {
             >
               <CalendarDays size={14} />
               Schedule This Week
+            </button>
+            <button
+              onClick={handleAutoPlan}
+              disabled={isAutoPlanning}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-violet-600 text-white rounded-lg hover:bg-violet-700 disabled:opacity-60"
+            >
+              <Sparkles size={14} />
+              {isAutoPlanning ? 'Planning…' : 'Auto-Plan This Week'}
             </button>
             <button
               onClick={handleMarkDone}

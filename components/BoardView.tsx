@@ -10,7 +10,6 @@ import {
   DragEndEvent,
   DragOverlay,
   DragStartEvent,
-  closestCenter,
   PointerSensor,
   useSensor,
   useSensors,
@@ -19,6 +18,7 @@ import {
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import { columnCollisionDetection } from '@/lib/dnd';
 import { useMemo, useState } from 'react';
 
 const statuses: { status: TaskStatus; color: string }[] = [
@@ -65,19 +65,21 @@ interface DroppableColumnProps {
 }
 
 function DroppableColumn({ status, color, tasks, isCollapsed, onToggle, droppableId }: DroppableColumnProps) {
-  const { setNodeRef } = useDroppable({
+  const { setNodeRef, isOver } = useDroppable({
     id: droppableId,
   });
-  const { setSelectedTask, setIsModalOpen } = usePlannerStore();
 
   const isArchived = status === 'Archived';
 
   if (isArchived && isCollapsed) {
     return (
       <div className="flex-shrink-0 w-full min-w-[240px] max-w-[280px]">
-        <div 
+        <div
           ref={setNodeRef}
-          className={`w-full rounded-lg ${color} p-4 min-h-[100px] transition-colors border-2 border-dashed border-transparent hover:border-gray-300`}
+          className={
+            `w-full rounded-lg ${color} p-4 min-h-[100px] transition-colors border-2 border-dashed ` +
+            (isOver ? 'border-blue-500 ring-2 ring-blue-500 ring-offset-2 brightness-105' : 'border-transparent hover:border-gray-300')
+          }
         >
           <button
             onClick={onToggle}
@@ -121,7 +123,10 @@ function DroppableColumn({ status, color, tasks, isCollapsed, onToggle, droppabl
     <div className="flex-shrink-0 w-full min-w-[240px] max-w-[280px]">
       <div
         ref={setNodeRef}
-        className={`rounded-lg ${color} p-4 min-h-[140px] md:min-h-[300px]`}
+        className={
+          `rounded-lg ${color} p-3 min-h-[140px] md:min-h-[240px] transition ` +
+          (isOver ? 'ring-2 ring-blue-500 ring-offset-2 brightness-105' : '')
+        }
       >
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-semibold text-gray-900 text-sm flex items-center gap-2">
@@ -171,7 +176,7 @@ export default function BoardView() {
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        distance: 8,
+        distance: 6,
       },
     })
   );
@@ -231,9 +236,10 @@ export default function BoardView() {
     <>
       <DndContext
         sensors={sensors}
-        collisionDetection={closestCenter}
+        collisionDetection={columnCollisionDetection}
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
+        onDragCancel={() => setActiveTask(null)}
       >
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
         {statuses.map(({ status, color }) => {
@@ -253,12 +259,8 @@ export default function BoardView() {
         })}
         </div>
 
-        <DragOverlay>
-          {activeTask ? (
-            <div className="opacity-90">
-              <TaskCard task={activeTask} onClick={() => {}} />
-            </div>
-          ) : null}
+        <DragOverlay dropAnimation={null}>
+          {activeTask ? <TaskCard task={activeTask} dragging /> : null}
         </DragOverlay>
       </DndContext>
 
