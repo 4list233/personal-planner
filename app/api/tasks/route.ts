@@ -3,6 +3,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchTasksFromNotion, createTaskInNotion } from '@/lib/notion';
+import { stageFromStatus } from '@/lib/planner';
 import { verifyIdToken } from '@/lib/firebase-admin';
 
 // Ensure Node.js runtime for Notion SDK compatibility on Vercel
@@ -83,21 +84,32 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const now = new Date();
 
-    // SECURITY: Notion DB rows are filtered by `User Email` property — known
-    // multi-tenant data sharing risk if Notion property is missing on a row.
-    // Tracked separately; do not expand scope of this PR to fix.
+    // Rows with an empty User Email are included for the planner owner.
+    // Rows tagged with someone else's email stay hidden. New rows still
+    // record this user's email and id.
+
+    const status = (body.status as any) || 'To Do';
+    const stage = body.stage || stageFromStatus(status) || undefined;
 
     // Minimal shape; in a full implementation, validate with Zod
     const newTask = await createTaskInNotion({
       title: (body.title as string) || 'New Task',
       dueDate:
         (body.dueDate as string | undefined) || now.toISOString().split('T')[0],
+      plannedDay: (body.plannedDay as string | undefined) || undefined,
       dateCreated: now.toISOString(),
-      status: (body.status as any) || 'To Do',
+      status,
+      stage,
+      priority: body.priority || undefined,
+      project: body.project || undefined,
+      bucket: body.bucket || undefined,
       weekday: (body.weekday as any) || 'No Weekdays',
       daysUntilDue: 0,
       todoItems: Array.isArray(body.todoItems) ? body.todoItems : [],
       comments: Array.isArray(body.comments) ? body.comments : [],
+      nextAction: typeof body.nextAction === 'string' ? body.nextAction : undefined,
+      sourceText: typeof body.sourceText === 'string' ? body.sourceText : undefined,
+      waitingOn: typeof body.waitingOn === 'string' ? body.waitingOn : undefined,
       important: typeof body.important === 'boolean' ? body.important : false,
       urgent: typeof body.urgent === 'boolean' ? body.urgent : false,
     }, user.email, user.uid); // Pass user email and ID

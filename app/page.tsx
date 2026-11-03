@@ -8,6 +8,7 @@ import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { usePlannerStore, setAuthTokenGetter } from '@/lib/store';
 import { useAuth } from '@/lib/auth-context';
+import { effectiveView } from '@/lib/planner';
 import DashboardHeader from '@/components/DashboardHeader';
 import ViewErrorBoundary from '@/components/ViewErrorBoundary';
 
@@ -29,6 +30,7 @@ export default function Home() {
   const router = useRouter();
   const { user, loading: authLoading, getIdToken } = useAuth();
   const currentView = usePlannerStore((s) => s.currentView);
+  const view = effectiveView(currentView);
   const fetchTasks = usePlannerStore((s) => s.fetchTasks);
   const lastFetchedAt = usePlannerStore((s) => s.lastFetchedAt);
   const [mounted, setMounted] = useState(false);
@@ -55,9 +57,9 @@ export default function Home() {
   // Update document title to reflect the active view
   useEffect(() => {
     if (typeof document !== 'undefined') {
-      document.title = VIEW_TITLES[currentView] ?? 'Personal Planner';
+      document.title = VIEW_TITLES[view] ?? 'Personal Planner';
     }
-  }, [currentView]);
+  }, [view]);
 
   useEffect(() => {
     setMounted(true);
@@ -97,16 +99,16 @@ export default function Home() {
       
       <main className="max-w-[100vw] mx-auto px-4 py-4 overflow-x-hidden">
         <ViewErrorBoundary
-          key={currentView}
+          key={view}
           viewName={
-            currentView.charAt(0).toUpperCase() + currentView.slice(1)
+            view.charAt(0).toUpperCase() + view.slice(1)
           }
-          title={VIEW_TITLES[currentView] ?? 'Personal Planner'}
+          title={VIEW_TITLES[view] ?? 'Personal Planner'}
         >
-          {currentView === 'board' && <BoardView />}
-          {currentView === 'weekdays' && <WeekdaysView />}
-          {currentView === 'calendar' && <CalendarView />}
-          {currentView === 'matrix' && <MatrixView />}
+          {view === 'board' && <BoardView />}
+          {view === 'weekdays' && <WeekdaysView />}
+          {view === 'calendar' && <CalendarView />}
+          {view === 'matrix' && <MatrixView />}
         </ViewErrorBoundary>
       </main>
 

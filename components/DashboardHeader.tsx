@@ -2,10 +2,12 @@
 
 import { usePlannerStore } from '@/lib/store';
 import ViewSwitcher from './ViewSwitcher';
+import { effectiveView } from '@/lib/planner';
 import { Filter, Search, Plus } from 'lucide-react';
 
 export default function DashboardHeader() {
   const { currentView, setCurrentView, addTask, setSelectedTask, setIsModalOpen } = usePlannerStore();
+  const view = effectiveView(currentView);
 
   const handleNewTask = async () => {
     // Always create a local draft first; no server call until user submits
@@ -15,6 +17,7 @@ export default function DashboardHeader() {
       dueDate: new Date().toISOString().split('T')[0],
       dateCreated: new Date().toISOString(),
       status: 'To Do' as const,
+      stage: 'Inbox' as const,
       weekday: 'No Weekdays' as const,
       daysUntilDue: 0,
       todoItems: [],
@@ -46,7 +49,7 @@ export default function DashboardHeader() {
         </div>
 
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-          <ViewSwitcher currentView={currentView} onViewChange={setCurrentView} />
+          <ViewSwitcher currentView={view} onViewChange={setCurrentView} />
           
           <div className="flex items-center gap-2 flex-wrap">
             {process.env.NEXT_PUBLIC_ENABLE_SEARCH === '1' && (

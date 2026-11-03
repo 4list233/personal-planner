@@ -1,12 +1,14 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import { usePlannerStore } from '@/lib/store';
 import { useEffect, useMemo, useState } from 'react';
 import { format } from 'date-fns';
 import { partitionTasksForCalendar } from '@/lib/calendar-utils';
 
 export default function CalendarView() {
-  const { tasks, setSelectedTask, setIsModalOpen, updateTask, submitPartial } = usePlannerStore();
+  const router = useRouter();
+  const { tasks, updateTask, submitPartial } = usePlannerStore();
   const [FullCalendar, setFullCalendar] = useState<any>(null);
   const [dayGridPlugin, setDayGridPlugin] = useState<any>(null);
   const [interactionPlugin, setInteractionPlugin] = useState<any>(null);
@@ -110,9 +112,8 @@ export default function CalendarView() {
                   key={t.id}
                   className="px-5 py-3 hover:bg-gray-50 cursor-pointer"
                   onClick={() => {
-                    setSelectedTask(t);
-                    setIsModalOpen(true);
                     setShowOutOfRange(false);
+                    router.push(`/tasks/${t.id}`);
                   }}
                 >
                   <div className="text-sm font-medium text-gray-900 truncate">{t.title}</div>
@@ -148,8 +149,7 @@ export default function CalendarView() {
         eventDrop={handleEventDrop}
         eventClick={(info: any) => {
           const task = info.event.extendedProps.task;
-          setSelectedTask(task);
-          setIsModalOpen(true);
+          if (task?.id) router.push(`/tasks/${task.id}`);
         }}
         dateClick={(info: any) => {
           console.log('Date clicked:', info.dateStr);

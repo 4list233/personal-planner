@@ -1,10 +1,12 @@
 'use client';
 
+import { useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { usePlannerStore } from '@/lib/store';
-import { Task, TaskStatus } from '@/lib/types';
+import { Task } from '@/lib/types';
+import { BOARD_COLUMNS, BoardColumn, columnForTask, compareBoardTasks, patchForColumn } from '@/lib/planner';
 import TaskCard from './TaskCard';
 import ImageTaskImport from './ImageTaskImport';
-import { Plus, ChevronDown, ChevronRight, Archive } from 'lucide-react';
 import {
   DndContext,
   DragEndEvent,
@@ -19,19 +21,22 @@ import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { columnCollisionDetection } from '@/lib/dnd';
-import { useMemo, useState } from 'react';
 
-const statuses: { status: TaskStatus; color: string }[] = [
-  { status: 'Reminders', color: 'bg-purple-50' },
-  { status: 'Long Term Deadlines', color: 'bg-pink-50' },
-  { status: 'To Do', color: 'bg-orange-50' },
-  { status: 'Doing Today', color: 'bg-green-50' },
-  { status: 'Doing Tomorrow', color: 'bg-yellow-50' },
-  { status: 'Archived', color: 'bg-gray-50' },
+const COLUMN_META: { column: BoardColumn; color: string; hint: string }[] = [
+  { column: 'Inbox', color: 'bg-orange-50', hint: 'New and unsorted work' },
+  { column: 'This Week', color: 'bg-yellow-50', hint: "This week's plan" },
+  { column: 'Today', color: 'bg-green-50', hint: 'On today’s list' },
+  { column: 'In Progress', color: 'bg-blue-50', hint: 'Started' },
+  { column: 'Waiting', color: 'bg-purple-50', hint: 'Blocked or waiting on someone' },
+  { column: 'Unsorted', color: 'bg-gray-50', hint: 'Doesn’t match a stage yet' },
 ];
 
+function columnDropId(column: BoardColumn) {
+  return `column:${column.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+}
+
 function SortableTaskCard({ task }: { task: Task }) {
-  const { setSelectedTask, setIsModalOpen } = usePlannerStore();
+  const router = useRouter();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: task.id,
   });
@@ -44,83 +49,26 @@ function SortableTaskCard({ task }: { task: Task }) {
 
   return (
     <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
-      <TaskCard
-        task={task}
-        onClick={() => {
-          setSelectedTask(task);
-          setIsModalOpen(true);
-        }}
-      />
+      <TaskCard task={task} onClick={() => router.push(`/tasks/${task.id}`)} />
     </div>
   );
 }
 
-interface DroppableColumnProps {
-  status: TaskStatus;
+function DroppableColumn({
+  column,
+  color,
+  hint,
+  tasks,
+}: {
+  column: BoardColumn;
   color: string;
+  hint: string;
   tasks: Task[];
-  droppableId: string;
-  isCollapsed?: boolean;
-  onToggle?: () => void;
-}
-
-function DroppableColumn({ status, color, tasks, isCollapsed, onToggle, droppableId }: DroppableColumnProps) {
-  const { setNodeRef, isOver } = useDroppable({
-    id: droppableId,
-  });
-
-  const isArchived = status === 'Archived';
-
-  if (isArchived && isCollapsed) {
-    return (
-      <div className="flex-shrink-0 w-full min-w-[240px] max-w-[280px]">
-        <div
-          ref={setNodeRef}
-          className={
-            `w-full rounded-lg ${color} p-4 min-h-[100px] transition-colors border-2 border-dashed ` +
-            (isOver ? 'border-blue-500 ring-2 ring-blue-500 ring-offset-2 brightness-105' : 'border-transparent hover:border-gray-300')
-          }
-        >
-          <button
-            onClick={onToggle}
-            className="w-full"
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Archive size={16} className="text-gray-600" />
-                <h2 className="font-semibold text-gray-900 text-sm">
-                  {status}
-                </h2>
-                <span className="bg-white text-gray-600 text-xs px-2 py-0.5 rounded-full">
-                  {tasks.length}
-                </span>
-              </div>
-              <ChevronRight size={16} className="text-gray-600" />
-            </div>
-          </button>
-          <div className="mt-2 text-xs text-gray-500 text-center">
-            Drop tasks here to archive
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  const emptyHint =
-    status === 'Reminders'
-      ? 'Drop reminders here'
-      : status === 'Long Term Deadlines'
-        ? 'Drop long-term deadlines here'
-        : status === 'To Do'
-          ? 'Drop tasks here'
-          : status === 'Doing Today'
-            ? "Drop today's work here"
-            : status === 'Doing Tomorrow'
-              ? "Drop tomorrow's work here"
-              : 'Drop tasks here to archive';
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id: columnDropId(column) });
 
   return (
-    <div className="flex-shrink-0 w-full min-w-[240px] max-w-[280px]">
+    <div className="flex-shrink-0 w-full min-w-[240px]">
       <div
         ref={setNodeRef}
         className={
@@ -130,29 +78,18 @@ function DroppableColumn({ status, color, tasks, isCollapsed, onToggle, droppabl
       >
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-semibold text-gray-900 text-sm flex items-center gap-2">
-            {isArchived && <Archive size={16} className="text-gray-600" />}
-            {status}
-            <span className="bg-white text-gray-600 text-xs px-2 py-0.5 rounded-full">
-              {tasks.length}
-            </span>
+            {column}
+            <span className="bg-white text-gray-600 text-xs px-2 py-0.5 rounded-full">{tasks.length}</span>
           </h2>
-          {isArchived && (
-            <button onClick={onToggle} className="text-gray-600 hover:text-gray-900">
-              <ChevronDown size={16} />
-            </button>
-          )}
         </div>
-
-        <SortableContext items={tasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
+        <SortableContext items={tasks.map((task) => task.id)} strategy={verticalListSortingStrategy}>
           <div className="space-y-3 min-h-[80px] md:min-h-[200px]">
             {tasks.map((task) => (
               <SortableTaskCard key={task.id} task={task} />
             ))}
-            {tasks.length === 0 && (
-              <div className="text-xs text-gray-500 text-center py-4 select-none">
-                {emptyHint}
-              </div>
-            )}
+            {tasks.length === 0 ? (
+              <div className="text-xs text-gray-500 text-center py-4 select-none">{hint}</div>
+            ) : null}
           </div>
         </SortableContext>
       </div>
@@ -161,75 +98,63 @@ function DroppableColumn({ status, color, tasks, isCollapsed, onToggle, droppabl
 }
 
 export default function BoardView() {
+  const router = useRouter();
   const { tasks, updateTask, submitPartial } = usePlannerStore();
   const [activeTask, setActiveTask] = useState<Task | null>(null);
-  const [isArchiveCollapsed, setIsArchiveCollapsed] = useState(true);
 
-  // Slug mapping avoids whitespace/special-character issues in droppable ids
-  const statusToId = (s: TaskStatus) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
-  const idToStatus = useMemo(() => {
-    const map: Record<string, TaskStatus> = {};
-    for (const { status } of statuses) map[statusToId(status)] = status;
+  const columnByDropId = useMemo(() => {
+    const map: Record<string, BoardColumn> = {};
+    for (const column of BOARD_COLUMNS) map[columnDropId(column)] = column;
     return map;
   }, []);
 
+  const tasksByColumn = useMemo(() => {
+    const grouped = new Map<BoardColumn, Task[]>();
+    for (const column of BOARD_COLUMNS) grouped.set(column, []);
+    for (const task of tasks) {
+      const column = columnForTask(task);
+      if (!column) continue;
+      grouped.get(column)?.push(task);
+    }
+    for (const list of grouped.values()) list.sort(compareBoardTasks);
+    return grouped;
+  }, [tasks]);
+
   const sensors = useSensors(
     useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 6,
-      },
+      activationConstraint: { distance: 6 },
     })
   );
 
   const handleDragStart = (event: DragStartEvent) => {
-    const task = tasks.find((t) => t.id === event.active.id);
-    if (task) {
-      setActiveTask(task);
-    }
+    const task = tasks.find((item) => item.id === event.active.id);
+    if (task) setActiveTask(task);
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     setActiveTask(null);
-
     if (!over) return;
 
-    const taskId = active.id as string;
-    
-    // Check if we dropped on a column (status) or on another task
-    let newStatus: TaskStatus | undefined;
+    const taskId = String(active.id);
+    const dragged = tasks.find((item) => item.id === taskId);
+    if (!dragged) return;
 
-    // If dropped over a column droppable, map id back to status
-    const byColumn = idToStatus[ String(over.id) ];
-    if (byColumn) {
-      newStatus = byColumn;
-    } else {
-      // If we dropped on a task, find that task's status
-      const targetTask = tasks.find((t) => t.id === over.id);
-      if (!targetTask) return;
-      newStatus = targetTask.status;
+    let nextColumn = columnByDropId[String(over.id)];
+    if (!nextColumn) {
+      const target = tasks.find((item) => item.id === over.id);
+      if (!target) return;
+      const targetColumn = columnForTask(target);
+      if (!targetColumn) return;
+      nextColumn = targetColumn;
     }
 
-    // Only update if the status actually changed
-    const draggedTask = tasks.find((t) => t.id === taskId);
-    if (draggedTask && newStatus && draggedTask.status !== newStatus) {
-      // Local optimistic update
-      updateTask(taskId, { status: newStatus });
-      // Fire-and-forget persist of just the status (ignore drafts)
-      submitPartial(taskId, { status: newStatus });
-    }
-  };
+    if (columnForTask(dragged) === nextColumn) return;
+    const patch = patchForColumn(nextColumn);
+    if (!patch) return;
 
-  const getTasksByStatus = (status: TaskStatus) => {
-    return tasks
-      .filter((task) => task.status === status)
-      .sort((a, b) => {
-        // Sort by due date: earliest first, tasks without dates go to the end
-        if (!a.dueDate && !b.dueDate) return 0;
-        if (!a.dueDate) return 1;
-        if (!b.dueDate) return -1;
-        return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
-      });
+    updateTask(taskId, patch);
+    submitPartial(taskId, patch);
   };
 
   return (
@@ -242,28 +167,25 @@ export default function BoardView() {
         onDragCancel={() => setActiveTask(null)}
       >
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-        {statuses.map(({ status, color }) => {
-          const statusTasks = getTasksByStatus(status);
-          const isArchived = status === 'Archived';
-          return (
+          {COLUMN_META.map(({ column, color, hint }) => (
             <DroppableColumn
-              key={status}
-              status={status}
+              key={column}
+              column={column}
               color={color}
-              tasks={statusTasks}
-              droppableId={statusToId(status)}
-              isCollapsed={isArchived ? isArchiveCollapsed : false}
-              onToggle={isArchived ? () => setIsArchiveCollapsed(!isArchiveCollapsed) : undefined}
+              hint={hint}
+              tasks={tasksByColumn.get(column) || []}
             />
-          );
-        })}
+          ))}
         </div>
-
         <DragOverlay dropAnimation={null}>
-          {activeTask ? <TaskCard task={activeTask} dragging /> : null}
+          {activeTask ? (
+            <TaskCard task={activeTask} dragging onClick={() => router.push(`/tasks/${activeTask.id}`)} />
+          ) : null}
         </DragOverlay>
       </DndContext>
-
+      <p className="mt-4 text-xs text-gray-400">
+        Done and archived tasks stay in Notion and are hidden here. Anything else that doesn’t match a stage lands in Unsorted.
+      </p>
       <div className="mt-8">
         <ImageTaskImport />
       </div>

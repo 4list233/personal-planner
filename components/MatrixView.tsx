@@ -1,5 +1,6 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import { usePlannerStore, getAuthHeaders } from '@/lib/store';
 import { Task, Quadrant, QUADRANT_LABEL, quadrantOf } from '@/lib/types';
 import TaskCard from './TaskCard';
@@ -47,7 +48,7 @@ function DraggableMatrixCard({
   selected: boolean;
   onToggleSelection: (id: string) => void;
 }) {
-  const { setSelectedTask, setIsModalOpen } = usePlannerStore();
+  const router = useRouter();
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: task.id,
   });
@@ -82,10 +83,8 @@ function DraggableMatrixCard({
         <TaskCard
           task={task}
           showQuadrantLabel
-          onClick={() => {
-            setSelectedTask(task);
-            setIsModalOpen(true);
-          }}
+          showLegacyDetails
+          onClick={() => router.push(`/tasks/${task.id}`)}
         />
       </div>
     </div>
