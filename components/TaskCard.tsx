@@ -4,12 +4,15 @@ import { Task, Quadrant, QUADRANT_LABEL, quadrantOf } from '@/lib/types';
 import { FileText, Calendar, AlertTriangle } from 'lucide-react';
 import { formatDueDateLocal } from '@/lib/formatters';
 import { formatDaysUntilDue, daysUntilDueColorClass } from '@/lib/formatters';
+import { isStale } from '@/lib/planner';
 
 interface TaskCardProps {
   task: Task;
   onClick?: () => void;
   /** When true, shows the full quadrant label (e.g. on the Matrix view) */
   showQuadrantLabel?: boolean;
+  /** Keep the weekday tag and inline checklist used by the older views. */
+  showLegacyDetails?: boolean;
   /** Visual treatment when this card is being rendered inside <DragOverlay>. */
   dragging?: boolean;
 }
@@ -35,11 +38,32 @@ const QUADRANT_SHORT: Record<Quadrant, string> = {
   Q4: 'Backlog',
 };
 
-export default function TaskCard({ task, onClick, showQuadrantLabel = false, dragging = false }: TaskCardProps) {
+const PRIORITY_CLASS: Record<string, string> = {
+  P1: 'bg-red-100 text-red-800',
+  P2: 'bg-amber-100 text-amber-800',
+  P3: 'bg-gray-100 text-gray-600',
+};
+
+function Chip({ children, className }: { children: React.ReactNode; className?: string }) {
+  return (
+    <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${className || 'bg-gray-100 text-gray-700'}`}>
+      {children}
+    </span>
+  );
+}
+
+export default function TaskCard({
+  task,
+  onClick,
+  showQuadrantLabel = false,
+  showLegacyDetails = false,
+  dragging = false,
+}: TaskCardProps) {
   const quadrant = quadrantOf(task);
   const showQuadrant = task.important === true || task.urgent === true || showQuadrantLabel;
+  const stale = isStale(task.lastEditedTime);
 
-  const getWeekdayColor = (weekday?: string) => {
+  const weekdayColor = (weekday?: string) => {
     if (!weekday || weekday === 'No Weekdays') return 'bg-blue-100 text-blue-700';
     const colors: Record<string, string> = {
       Sunday: 'bg-green-100 text-green-700',
@@ -53,27 +77,24 @@ export default function TaskCard({ task, onClick, showQuadrantLabel = false, dra
     return colors[weekday] || 'bg-gray-100 text-gray-700';
   };
 
-  const getStatusColor = (status: string) => {
-    const colors: Record<string, string> = {
-      'Reminders': 'bg-purple-50 text-purple-700 border-purple-200',
-      'Long Term Deadlines': 'bg-pink-50 text-pink-700 border-pink-200',
-      'To Do': 'bg-orange-50 text-orange-700 border-orange-200',
-      'Doing Today': 'bg-green-50 text-green-700 border-green-200',
-      'Doing Tomorrow': 'bg-yellow-50 text-yellow-700 border-yellow-200',
-      'Archived': 'bg-gray-50 text-gray-700 border-gray-200',
-    };
-    return colors[status] || 'bg-gray-50 text-gray-700 border-gray-200';
-  };
-
   return (
     <div
       onClick={onClick}
+      onKeyDown={(event) => {
+        if (!onClick) return;
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onClick();
+        }
+      }}
+      role={onClick ? 'link' : undefined}
+      tabIndex={onClick ? 0 : undefined}
       className={
         'relative bg-white border border-gray-200 rounded-lg p-3 hover:shadow-md transition-shadow cursor-pointer group ' +
         (dragging ? 'opacity-90 shadow-xl ring-1 ring-blue-300' : '')
       }
     >
-      {showQuadrant && (
+      {showQuadrant ? (
         <div className="absolute top-2 right-2 flex items-center gap-1">
           {showQuadrantLabel ? (
             <span
@@ -89,39 +110,63 @@ export default function TaskCard({ task, onClick, showQuadrantLabel = false, dra
             />
           )}
         </div>
-      )}
+      ) : null}
       <div className="flex items-start gap-2 mb-2 pr-6">
         <FileText size={16} className="text-gray-400 mt-0.5 flex-shrink-0" />
-        <h3 className="text-sm font-medium text-gray-900 group-hover:text-blue-600 transition-colors break-words overflow-wrap-anywhere flex-1">
+        <h3 className="text-sm font-medium text-gray-900 group-hover:text-blue-600 transition-colors break-words flex-1">
           {task.title}
         </h3>
-        {task.pendingSync && (
+        {task.pendingSync ? (
           <span title="Save pending — server has not confirmed">
             <AlertTriangle size={14} className="text-amber-500 flex-shrink-0 mt-0.5" />
           </span>
-        )}
+        ) : null}
       </div>
 
-      {task.dueDate && (
-        <div className="text-xs text-gray-500 mb-2 flex items-center gap-1">
-          <Calendar size={12} />
-          {formatDueDateLocal(task.dueDate)}
-        </div>
-      )}
+      <div className="flex flex-wrap gap-1 mb-2">
+        {task.priority ? <Chip className={PRIORITY_CLASS[task.priority] || PRIORITY_CLASS.P3}>{task.priority}</Chip> : null}
+        {task.project ? <Chip className="bg-sky-50 text-sky-800">{task.project}</Chip> : null}
+        {task.bucket ? <Chip>{task.bucket}</Chip> : null}
+        {stale ? (
+          <Chip className="bg-orange-100 text-orange-800">
+            <span title="Untouched for 7 or more days">Stale</span>
+          </Chip>
+        ) : null}
+      </div>
 
-      {task.daysUntilDue !== undefined && (
-        <div className={`text-xs font-medium mb-2 ${daysUntilDueColorClass(task.daysUntilDue)}`}>
-          {formatDaysUntilDue(task.daysUntilDue)}
-        </div>
-      )}
+      {task.waitingOn ? (
+        <div className="text-xs text-purple-700 mb-2 break-words">Waiting on {task.waitingOn}</div>
+      ) : null}
 
-      {task.weekday && (
-        <div className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium ${getWeekdayColor(task.weekday)}`}>
-          🔵 {task.weekday}
+      {(task.plannedDay || task.dueDate) ? (
+        <div className="text-xs text-gray-500 mb-1 flex flex-col gap-0.5">
+          {task.plannedDay ? (
+            <span className="flex items-center gap-1">
+              <Calendar size={12} />
+              Plan {formatDueDateLocal(task.plannedDay)}
+            </span>
+          ) : null}
+          {task.dueDate ? (
+            <span className="flex items-center gap-1">
+              <Calendar size={12} />
+              Due {formatDueDateLocal(task.dueDate)}
+              {task.daysUntilDue !== undefined ? (
+                <span className={daysUntilDueColorClass(task.daysUntilDue)}>
+                  {formatDaysUntilDue(task.daysUntilDue)}
+                </span>
+              ) : null}
+            </span>
+          ) : null}
         </div>
-      )}
+      ) : null}
 
-      {task.todoItems && task.todoItems.length > 0 && (
+      {showLegacyDetails && task.weekday ? (
+        <div className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium mt-2 ${weekdayColor(task.weekday)}`}>
+          {task.weekday}
+        </div>
+      ) : null}
+
+      {showLegacyDetails && task.todoItems && task.todoItems.length > 0 ? (
         <div className="mt-3 pt-3 border-t border-gray-100">
           <div className="text-xs font-semibold text-gray-700 mb-2">To-do</div>
           {task.todoItems.map((item) => (
@@ -136,7 +181,13 @@ export default function TaskCard({ task, onClick, showQuadrantLabel = false, dra
             </div>
           ))}
         </div>
-      )}
+      ) : null}
+
+      {!showLegacyDetails && task.todoItems && task.todoItems.length > 0 ? (
+        <div className="mt-2 text-[11px] text-gray-400">
+          {task.todoItems.length} to-do{task.todoItems.length === 1 ? '' : 's'}
+        </div>
+      ) : null}
     </div>
   );
 }

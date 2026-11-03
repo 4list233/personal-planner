@@ -56,7 +56,7 @@ export function daysBetweenInUserTz(from: string, to: string): number {
  * wrapper used by display code. Returns undefined when input is missing.
  */
 export function daysUntilDueInUserTz(
-  dueDate?: string,
+  dueDate?: string | null,
   now: Date = new Date(),
   tz: string = getUserTimezone()
 ): number | undefined {

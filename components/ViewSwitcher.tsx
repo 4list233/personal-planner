@@ -9,12 +9,16 @@ interface ViewSwitcherProps {
 }
 
 export default function ViewSwitcher({ currentView, onViewChange }: ViewSwitcherProps) {
-  const views: { type: ViewType; label: string; icon: React.ReactNode }[] = [
-    { type: 'board', label: 'Board View', icon: <LayoutGrid size={16} /> },
-    { type: 'weekdays', label: 'Weekdays View', icon: <Calendar size={16} /> },
+  const showLegacy = process.env.NEXT_PUBLIC_SHOW_LEGACY_VIEWS === '1';
+  const allViews: { type: ViewType; label: string; icon: React.ReactNode }[] = [
+    { type: 'board', label: 'Board', icon: <LayoutGrid size={16} /> },
+    { type: 'weekdays', label: 'Weekdays', icon: <Calendar size={16} /> },
     { type: 'calendar', label: 'Calendar', icon: <CalendarIcon size={16} /> },
     { type: 'matrix', label: 'Matrix', icon: <Grid2x2 size={16} /> },
   ];
+  const views = allViews.filter(
+    (view) => showLegacy || (view.type !== 'weekdays' && view.type !== 'matrix')
+  );
 
   return (
     <div className="flex gap-2 border border-gray-200 rounded-lg p-1 bg-gray-50">

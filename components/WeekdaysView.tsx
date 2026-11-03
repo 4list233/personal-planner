@@ -1,5 +1,6 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import { usePlannerStore } from '@/lib/store';
 import { Weekday, Task } from '@/lib/types';
 import TaskCard from './TaskCard';
@@ -32,7 +33,7 @@ const weekdays: { day: Weekday; color: string }[] = [
 ];
 
 function SortableTaskCard({ task }: { task: Task }) {
-  const { setSelectedTask, setIsModalOpen } = usePlannerStore();
+  const router = useRouter();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: task.id,
   });
@@ -47,10 +48,8 @@ function SortableTaskCard({ task }: { task: Task }) {
     <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
       <TaskCard
         task={task}
-        onClick={() => {
-          setSelectedTask(task);
-          setIsModalOpen(true);
-        }}
+        showLegacyDetails
+        onClick={() => router.push(`/tasks/${task.id}`)}
       />
     </div>
   );

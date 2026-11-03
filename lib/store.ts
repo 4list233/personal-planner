@@ -185,6 +185,7 @@ export const usePlannerStore = create<PlannerStore>((set, get) => ({
         set({ tasks, lastFetchedAt: Date.now() });
       } catch (e) {
         console.error('❌ Failed to load tasks from API:', e);
+        toast.error('Could not load tasks from Notion.');
         // Leave existing tasks in place on error.
       } finally {
         set({ isFetching: false });
@@ -199,13 +200,21 @@ export const usePlannerStore = create<PlannerStore>((set, get) => ({
   updateTask: (id, updates) => {
     const enhancedUpdates: Partial<Task> = { ...updates };
     if ('dueDate' in updates) {
-      const { value, error } = normalizeDate(updates.dueDate);
+      const { value, error } = normalizeDate(updates.dueDate ?? undefined);
       if (error) {
         toast.error(`Invalid date: ${error}`);
         return;
       }
-      enhancedUpdates.dueDate = value;
+      enhancedUpdates.dueDate = value ?? null;
       enhancedUpdates.daysUntilDue = calculateDaysUntilDue(value);
+    }
+    if ('plannedDay' in updates) {
+      const { value, error } = normalizeDate(updates.plannedDay ?? undefined);
+      if (error) {
+        toast.error(`Invalid date: ${error}`);
+        return;
+      }
+      enhancedUpdates.plannedDay = value ?? null;
     }
 
     set((state) => {
@@ -235,12 +244,20 @@ export const usePlannerStore = create<PlannerStore>((set, get) => ({
           body: JSON.stringify({
             title: task.title,
             dueDate: task.dueDate,
+            plannedDay: task.plannedDay,
             status: task.status,
+            stage: task.stage,
+            priority: task.priority,
+            project: task.project,
+            bucket: task.bucket,
             weekday: task.weekday,
             todoItems: task.todoItems || [],
             comments: task.comments || [],
-            important: (task as any).important ?? false,
-            urgent: (task as any).urgent ?? false,
+            nextAction: task.nextAction,
+            sourceText: task.sourceText,
+            waitingOn: task.waitingOn,
+            important: task.important ?? false,
+            urgent: task.urgent ?? false,
           }),
         });
         if (!result.ok) {
