@@ -162,6 +162,8 @@ function Body({ task, onClose }: { task: Task; onClose: () => void }) {
           field="title"
           value={task.title}
           ariaLabel="Task title"
+          placeholder="Task title"
+          autoFocus={draft && !task.title}
           required
           onCommit={(title) => save({ title })}
           className="flex-1 min-w-0 font-display text-lg font-semibold text-ink bg-transparent border-b-2 border-transparent hover:border-line focus:border-accent focus:outline-none"

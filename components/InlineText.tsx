@@ -14,6 +14,8 @@ interface InlineTextProps {
   rows?: number;
   /** Reject an empty value and put the old text back. */
   required?: boolean;
+  /** Focus on mount, for the title of a task that was just started. */
+  autoFocus?: boolean;
   className?: string;
 }
 
@@ -31,6 +33,7 @@ export default function InlineText({
   multiline = false,
   rows = 3,
   required = false,
+  autoFocus = false,
   className = '',
 }: InlineTextProps) {
   const setEditing = usePlannerStore((state) => state.setEditing);
@@ -45,6 +48,7 @@ export default function InlineText({
     value: draft,
     'aria-label': ariaLabel,
     placeholder,
+    autoFocus,
     className,
     onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setDraft(event.target.value),
     onFocus: () => {

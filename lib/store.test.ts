@@ -32,6 +32,11 @@ beforeEach(() => {
         failNext = null;
         return new Response('nope', { status });
       }
+      if (url === '/api/tasks' && method === 'POST') {
+        const created = { ...body, id: `page-${Object.keys(server).length + 1}` } as Task;
+        server[created.id] = created;
+        return Response.json({ task: created });
+      }
       if (url === '/api/tasks') return Response.json({ tasks: Object.values(server) });
       const id = url.split('/')[3];
       if (url.endsWith('/steps')) {
@@ -244,5 +249,45 @@ describe('background refresh', () => {
     await usePlannerStore.getState().fetchTasks({ force: true, background: true });
     expect(usePlannerStore.getState().syncError).toBe(true);
     expect(useToastStore.getState().toasts).toEqual([]);
+  });
+});
+
+describe('a new task started from Add task', () => {
+  it('stays on this device until saved, then sends title, subtasks and notes in one create', async () => {
+    const id = usePlannerStore.getState().startDraft();
+    expect(usePlannerStore.getState().detailTaskId).toBe(id);
+    usePlannerStore.getState().updateTask(id, { title: 'Book dentist', commentsText: 'mornings only' });
+    await usePlannerStore.getState().changeSteps(id, { type: 'addStep', text: 'Check insurance card', milestone: null });
+    expect(writes()).toEqual([]);
+
+    expect(await usePlannerStore.getState().submitTask(id)).toBe(true);
+    expect(writes()).toHaveLength(1);
+    expect(writes()[0].body).toMatchObject({
+      title: 'Book dentist',
+      todosText: '- [ ] Check insurance card',
+      commentsText: 'mornings only',
+    });
+    // The panel follows the row to its Notion id.
+    const saved = usePlannerStore.getState().detailTaskId!;
+    expect(saved.startsWith('temp-')).toBe(false);
+    expect(row(saved).title).toBe('Book dentist');
+  });
+
+  it('refuses to save without a title', async () => {
+    const id = usePlannerStore.getState().startDraft();
+    expect(await usePlannerStore.getState().submitTask(id)).toBe(false);
+    expect(writes()).toEqual([]);
+  });
+
+  it('drops a blank draft on close and saves a titled one', async () => {
+    usePlannerStore.getState().startDraft();
+    usePlannerStore.getState().closeDetail();
+    expect(usePlannerStore.getState().tasks).toEqual([]);
+
+    const id = usePlannerStore.getState().startDraft();
+    usePlannerStore.getState().updateTask(id, { title: 'Kept' });
+    usePlannerStore.getState().closeDetail();
+    await vi.waitFor(() => expect(writes()).toHaveLength(1));
+    expect(writes()[0].body.title).toBe('Kept');
   });
 });

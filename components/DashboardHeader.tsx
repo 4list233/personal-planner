@@ -6,7 +6,6 @@ import { usePathname } from 'next/navigation';
 import { usePlannerStore } from '@/lib/store';
 import { todayInUserTz } from '@/lib/time';
 import { isOverdue } from '@/lib/views';
-import ImageTaskImport from './ImageTaskImport';
 
 const PAGES = [
   { href: '/', label: 'Board' },
@@ -28,10 +27,10 @@ function headerDate(day: string): string {
 export default function DashboardHeader() {
   const syncError = usePlannerStore((state) => state.syncError);
   const addQuickTask = usePlannerStore((state) => state.addQuickTask);
+  const startDraft = usePlannerStore((state) => state.startDraft);
   const tasks = usePlannerStore((state) => state.tasks);
   const lastFetchedAt = usePlannerStore((state) => state.lastFetchedAt);
   const [draft, setDraft] = useState('');
-  const [importing, setImporting] = useState(false);
   const pathname = usePathname();
 
   const today = useMemo(() => todayInUserTz(), [lastFetchedAt]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -40,7 +39,11 @@ export default function DashboardHeader() {
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
     const title = draft.trim();
-    if (!title) return;
+    // An empty box opens the full form, so Add never silently does nothing.
+    if (!title) {
+      startDraft();
+      return;
+    }
     setDraft('');
     void addQuickTask(title);
   };
@@ -73,30 +76,21 @@ export default function DashboardHeader() {
             Couldn’t reach Notion. Showing the last saved list.
           </span>
         ) : null}
-        <div className="flex gap-2 w-full md:w-auto md:ml-auto md:flex-[0_1_460px]">
+        <div className="flex w-full md:w-auto md:ml-auto md:flex-[0_1_420px]">
           <form onSubmit={submit} className="flex flex-1 min-w-0 gap-2">
             <input
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
               aria-label="New task"
-              placeholder="Add a task to Inbox"
+              placeholder="Type a task and press Enter"
               className="flex-1 min-w-0 h-11 px-3 border border-line-strong rounded-lg bg-white text-sm text-ink placeholder:text-muted focus:outline-2 focus:-outline-offset-1 focus:outline-accent"
             />
             <button type="submit" className="h-11 px-4 rounded-lg bg-accent text-white text-sm font-semibold cursor-pointer">
-              Add
+              Add task
             </button>
           </form>
-          <button
-            type="button"
-            aria-expanded={importing}
-            onClick={() => setImporting(!importing)}
-            className="h-11 px-3 rounded-lg border border-line-strong bg-white text-sm cursor-pointer hover:bg-chip"
-          >
-            Import
-          </button>
         </div>
       </div>
-      {importing ? <ImageTaskImport /> : null}
     </header>
   );
 }
