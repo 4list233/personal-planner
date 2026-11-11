@@ -6,7 +6,7 @@ import { shortDate } from '@/lib/formatters';
 import { stepProgress } from '@/lib/steps';
 import { usePlannerStore } from '@/lib/store';
 import type { Task } from '@/lib/types';
-import { isDone } from '@/lib/views';
+import { isFinished } from '@/lib/views';
 
 // Inner controls must not start a drag or open the panel underneath them.
 const stopCardGestures = {
@@ -30,7 +30,7 @@ function TaskCard({ task, dragging = false }: { task: Task; dragging?: boolean }
     (state) => state.focusedTaskId === task.id || state.detailTaskId === task.id
   );
 
-  const done = isDone(task);
+  const done = isFinished(task);
   const progress = stepProgress(task.todosText);
   const due = dueLabel(task, done);
   const percent = progress.total === 0 ? 0 : Math.round((progress.done / progress.total) * 100);

@@ -13,6 +13,7 @@ import {
   reopenPatch,
   type MoveTarget,
   type PriorState,
+  isFinished,
 } from './views';
 
 // Auth token getter (set by AuthProvider in the app)
@@ -535,7 +536,8 @@ export const usePlannerStore = create<PlannerStore>((set, get) => ({
   },
   reopenTask: async (id) => {
     const task = get().tasks.find((t) => t.id === id);
-    if (!task || !isDone(task)) return;
+    // Archived rows reopen too: they show in Done, so the checkbox has to work.
+    if (!task || !isFinished(task)) return;
     const { today, tomorrow } = dayPair();
     const prior = readJson<PriorState>(priorStateKey(id));
     const saved = await get().saveChange(id, reopenPatch(task, prior, today, tomorrow));

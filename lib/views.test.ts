@@ -70,10 +70,11 @@ describe('lanes', () => {
     expect(lane({ stage: 'Waiting', plannedDay: TODAY })).toBe('Today');
   });
 
-  it('separates finished from archived', () => {
+  it('puts done and archived rows in Done', () => {
     expect(lane({ status: 'Done' })).toBe('Done');
     expect(lane({ stage: 'Done' })).toBe('Done');
-    expect(lane({ status: 'Archived', stage: 'Done' })).toBeNull();
+    expect(lane({ status: 'Archived', stage: 'Done' })).toBe('Done');
+    expect(lane({ status: 'Archived', stage: 'Inbox' })).toBe('Done');
   });
 
   it('sorts by priority then due date, and Done newest first', () => {

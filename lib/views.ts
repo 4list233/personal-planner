@@ -21,6 +21,11 @@ export function isDone(task: Pick<Task, 'status' | 'stage'>): boolean {
   return !isArchived(task) && (task.status === 'Done' || task.stage === 'Done');
 }
 
+/** Done or archived: both are finished work, and both sit in the Done lane. */
+export function isFinished(task: Pick<Task, 'status' | 'stage'>): boolean {
+  return isArchived(task) || isDone(task);
+}
+
 export function isOpen(task: Pick<Task, 'status' | 'stage'>): boolean {
   return !isArchived(task) && !isDone(task);
 }
@@ -47,9 +52,9 @@ export function placementOf(task: Task, today: string, tomorrow: string): Placem
 }
 
 /** Five lanes stand in for Notion's six stages. Every open row lands in exactly one. */
-export function laneOf(task: Task, today: string, tomorrow: string): Lane | null {
-  if (isArchived(task)) return null;
-  if (isDone(task)) return 'Done';
+export function laneOf(task: Task, today: string, tomorrow: string): Lane {
+  // Archived rows are tasks Forest finished before Done existed as a lane.
+  if (isFinished(task)) return 'Done';
   const placement = placementOf(task, today, tomorrow);
   if (placement === 'today') return 'Today';
   if (placement === 'tomorrow') return 'Tomorrow';
@@ -79,23 +84,15 @@ function compareInLane(a: Task, b: Task): number {
   return a.title.localeCompare(b.title) || a.id.localeCompare(b.id);
 }
 
-export function selectDone(tasks: Task[]): Task[] {
-  return tasks
-    .filter(isDone)
-    .sort((a, b) => (b.lastEditedTime ?? '').localeCompare(a.lastEditedTime ?? ''));
-}
-
 export function selectLanes(tasks: Task[], today: string, tomorrow: string): Record<Lane, Task[]> {
   const lanes: Record<Lane, Task[]> = { Today: [], Tomorrow: [], 'This Week': [], Inbox: [], Done: [] };
-  for (const task of tasks) {
-    const lane = laneOf(task, today, tomorrow);
-    if (lane) lanes[lane].push(task);
-  }
+  for (const task of tasks) lanes[laneOf(task, today, tomorrow)].push(task);
   lanes.Today.sort(compareInLane);
   lanes.Tomorrow.sort(compareInLane);
   lanes['This Week'].sort(compareInLane);
   lanes.Inbox.sort(compareInLane);
-  lanes.Done = selectDone(lanes.Done);
+  // Newest first, so what was just finished is on top.
+  lanes.Done.sort((a, b) => (b.lastEditedTime ?? '').localeCompare(a.lastEditedTime ?? ''));
   return lanes;
 }
 
