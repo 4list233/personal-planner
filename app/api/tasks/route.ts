@@ -94,8 +94,8 @@ export async function POST(request: NextRequest) {
     // Minimal shape; in a full implementation, validate with Zod
     const newTask = await createTaskInNotion({
       title: (body.title as string) || 'New Task',
-      dueDate:
-        (body.dueDate as string | undefined) || now.toISOString().split('T')[0],
+      // No default: a made-up due date turns every undated task overdue tomorrow.
+      dueDate: (body.dueDate as string | undefined) || undefined,
       plannedDay: (body.plannedDay as string | undefined) || undefined,
       dateCreated: now.toISOString(),
       status,

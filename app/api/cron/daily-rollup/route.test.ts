@@ -5,9 +5,11 @@ import { Task, Weekday } from '@/lib/types';
 // fetchTasksFromNotion and updateTaskInNotion from '@/lib/notion'.
 const fetched: Task[] = [];
 const updates: Array<{ id: string; patch: any }> = [];
+const latest: Record<string, Task> = {};
 
 vi.mock('@/lib/notion', () => ({
   fetchTasksFromNotion: vi.fn(async () => fetched),
+  fetchTaskFromNotion: vi.fn(async (id: string) => latest[id] ?? fetched.find((t) => t.id === id)),
   updateTaskInNotion: vi.fn(async (id: string, patch: any) => {
     updates.push({ id, patch });
     return { id, ...patch };
@@ -21,6 +23,7 @@ beforeEach(() => {
   process.env.USER_TIMEZONE = 'UTC';
   fetched.length = 0;
   updates.length = 0;
+  for (const id of Object.keys(latest)) delete latest[id];
 });
 
 afterEach(() => {
@@ -87,6 +90,26 @@ describe('daily-rollup carryover semantics', () => {
     expect(res.status).toBe(200);
     expect(updates.find((u) => u.id === 'c')).toBeUndefined();
     expect(updates.every((u) => u.patch.status !== 'Archived')).toBe(true);
+  });
+
+  it('leaves a task alone if it was completed after the list was read', async () => {
+    fetched.push(task({ id: 'raced', status: 'Doing Tomorrow' }));
+    latest.raced = { ...task({ id: 'raced', status: 'Done' }), stage: 'Done' };
+    const res = await callRoute('POST', '', authHeaders());
+    expect(res.status).toBe(200);
+    expect(updates).toEqual([]);
+  });
+
+  it('never pulls a finished task back, even on its weekday', async () => {
+    const WEEK: Weekday[] = [
+      'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday',
+    ];
+    const weekday = WEEK[new Date().getUTCDay()];
+    fetched.push(task({ id: 'finished', status: 'Done', weekday }));
+    fetched.push({ ...task({ id: 'stage-done', status: 'To Do', weekday }), stage: 'Done' });
+    const res = await callRoute('POST', '', authHeaders());
+    expect(res.status).toBe(200);
+    expect(updates).toEqual([]);
   });
 
   it('weekday matching today promotes To Do → Doing Today', async () => {

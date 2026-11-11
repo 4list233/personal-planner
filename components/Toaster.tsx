@@ -7,14 +7,15 @@ export default function Toaster() {
   const { toasts, dismiss } = useToastStore();
 
   return (
-    <div className="fixed bottom-4 right-4 z-[100] flex flex-col gap-2 w-full max-w-sm pointer-events-none">
+    // Left of the overlay panel at tablet widths, so it can't cover Complete. Above the phone tabs.
+    <div className="fixed bottom-20 md:bottom-6 left-1/2 -translate-x-1/2 md:left-6 md:translate-x-0 xl:left-1/2 xl:-translate-x-1/2 z-[100] flex flex-col gap-2 w-[calc(100vw-2rem)] max-w-sm pointer-events-none">
       {toasts.map((t) => {
         const styles =
           t.variant === 'destructive'
             ? 'bg-red-600 text-white border-red-700'
             : t.variant === 'success'
-              ? 'bg-green-600 text-white border-green-700'
-              : 'bg-gray-900 text-white border-gray-800';
+              ? 'bg-ink text-white border-ink'
+              : 'bg-ink text-white border-ink';
         const Icon =
           t.variant === 'destructive'
             ? AlertTriangle
@@ -25,9 +26,9 @@ export default function Toaster() {
           <div
             key={t.id}
             role="status"
-            className={`pointer-events-auto rounded-lg border shadow-lg px-4 py-3 flex items-start gap-3 ${styles}`}
+            className={`pointer-events-auto rounded-[10px] border shadow-lg px-4 py-2.5 flex items-center gap-3 font-sans ${styles}`}
           >
-            <Icon size={18} className="flex-shrink-0 mt-0.5" />
+            <Icon size={18} className="flex-shrink-0" />
             <div className="flex-1 text-sm">{t.message}</div>
             {t.action && (
               <button
@@ -35,7 +36,7 @@ export default function Toaster() {
                   void t.action!.onClick();
                   dismiss(t.id);
                 }}
-                className="text-sm font-semibold underline hover:opacity-90"
+                className="h-8 px-3 rounded-md bg-white text-ink text-sm font-semibold cursor-pointer"
               >
                 {t.action.label}
               </button>
