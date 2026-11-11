@@ -6,8 +6,7 @@ import { getAuthHeaders, usePlannerStore } from '@/lib/store';
 import { statusForStage } from '@/lib/planner';
 import { formatDaysUntilDue } from '@/lib/formatters';
 import type { Bucket, Priority, ProjectName, Stage, Task, TaskStatus } from '@/lib/types';
-import { isArchived, isDone } from '@/lib/views';
-import ArchiveButton from './ArchiveButton';
+import { isArchived, isFinished } from '@/lib/views';
 import InlineText from './InlineText';
 import StepChecklist from './StepChecklist';
 
@@ -145,7 +144,7 @@ function Body({ task, onClose }: { task: Task; onClose: () => void }) {
   const applyHeldUpdate = usePlannerStore((state) => state.applyHeldUpdate);
 
   const save = (patch: Partial<Task>) => void saveChange(task.id, patch);
-  const done = isDone(task);
+  const done = isFinished(task);
   const archived = isArchived(task);
   const draft = task.id.startsWith('temp-');
 
@@ -315,10 +314,7 @@ function Body({ task, onClose }: { task: Task; onClose: () => void }) {
             <button type="button" onClick={() => void reopenTask(task.id)} className={primaryButton}>
               Reopen
             </button>
-            <ArchiveButton taskId={task.id} title={task.title} />
           </>
-        ) : archived ? (
-          <span className="text-sm text-muted">Archived. Change it in Notion if you need it back.</span>
         ) : (
           <>
             <button type="button" onClick={() => void completeTask(task.id)} className={primaryButton}>

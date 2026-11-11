@@ -28,7 +28,7 @@ const EMPTY_TEXT: Record<Lane, string> = {
   Done: 'Drop here to complete',
 };
 
-// Done only grows. Showing it all by default would dwarf the lanes beside it.
+// Done holds everything ever finished or archived. Even opened, it starts short.
 const DONE_PREVIEW = 25;
 
 function DraggableCard({ task }: { task: Task }) {
@@ -40,7 +40,27 @@ function DraggableCard({ task }: { task: Task }) {
   );
 }
 
-function LaneColumn({ lane, tasks }: { lane: Lane; tasks: Task[] }) {
+/** Done folded into a strip: still a full-height drop target, without taking a lane's width. */
+function DoneStrip({ count, onOpen }: { count: number; onOpen: () => void }) {
+  const { setNodeRef, isOver } = useDroppable({ id: 'Done' });
+  return (
+    <button
+      ref={setNodeRef}
+      type="button"
+      onClick={onOpen}
+      aria-label={`Done, ${count} tasks. Show them`}
+      className={
+        'w-14 min-h-[560px] rounded-xl flex flex-col items-center gap-2 pt-3.5 cursor-pointer transition-colors ' +
+        (isOver ? 'bg-accent-strong outline-2 -outline-offset-2 outline-accent' : 'bg-accent-soft hover:bg-accent-strong')
+      }
+    >
+      <span className="text-[13px] text-muted">{count}</span>
+      <span className="text-sm font-semibold [writing-mode:vertical-rl]">Done</span>
+    </button>
+  );
+}
+
+function LaneColumn({ lane, tasks, onCollapse }: { lane: Lane; tasks: Task[]; onCollapse?: () => void }) {
   const { setNodeRef, isOver } = useDroppable({ id: lane });
   const [showAll, setShowAll] = useState(false);
   const isDoneLane = lane === 'Done';
@@ -59,6 +79,15 @@ function LaneColumn({ lane, tasks }: { lane: Lane; tasks: Task[] }) {
       <div className="flex items-baseline gap-2 px-1 pt-1 pb-2.5">
         <h2 className="text-sm font-semibold">{lane}</h2>
         <span className="text-[13px] text-muted">{tasks.length}</span>
+        {onCollapse ? (
+          <button
+            type="button"
+            onClick={onCollapse}
+            className="ml-auto -my-2 h-9 px-2 rounded-md text-[13px] text-muted hover:bg-accent-strong cursor-pointer"
+          >
+            Hide
+          </button>
+        ) : null}
       </div>
       <div className="flex flex-col gap-2">
         {shown.map((task) => (
@@ -85,6 +114,8 @@ export default function BoardView() {
   const saveChange = usePlannerStore((state) => state.saveChange);
   const completeTask = usePlannerStore((state) => state.completeTask);
   const [activeTask, setActiveTask] = useState<Task | null>(null);
+  // Collapsed by default: the four open lanes get the room, and Done stays a drop target.
+  const [doneOpen, setDoneOpen] = useState(false);
 
   const sensors = useSensors(
     // Far enough that a click with a shaky hand still opens the card.
@@ -117,10 +148,20 @@ export default function BoardView() {
     >
       <div className="overflow-x-auto">
         {/* 150px is the widest lane that still fits five, Done included, beside the panel at 1280. */}
-        <div className="grid grid-cols-[repeat(5,minmax(150px,1fr))] items-start gap-2.5">
-          {BOARD_LANES.map((lane) => (
-            <LaneColumn key={lane} lane={lane} tasks={lanes[lane]} />
-          ))}
+        <div
+          className={`grid items-start gap-2.5 ${
+            doneOpen ? 'grid-cols-[repeat(5,minmax(150px,1fr))]' : 'grid-cols-[repeat(4,minmax(150px,1fr))_auto]'
+          }`}
+        >
+          {BOARD_LANES.map((lane) =>
+            lane !== 'Done' ? (
+              <LaneColumn key={lane} lane={lane} tasks={lanes[lane]} />
+            ) : doneOpen ? (
+              <LaneColumn key={lane} lane={lane} tasks={lanes[lane]} onCollapse={() => setDoneOpen(false)} />
+            ) : (
+              <DoneStrip key={lane} count={lanes[lane].length} onOpen={() => setDoneOpen(true)} />
+            )
+          )}
         </div>
       </div>
       <DragOverlay dropAnimation={null}>{activeTask ? <TaskCard task={activeTask} dragging /> : null}</DragOverlay>
