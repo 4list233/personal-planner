@@ -1,6 +1,7 @@
 // API Route: GET /api/tasks
 // Fetches all tasks from Notion database (filtered by authenticated user)
 
+import { cleanPeople } from '@/lib/task-patch';
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchTasksFromNotion, createTaskInNotion } from '@/lib/notion';
 import { stageFromStatus } from '@/lib/planner';
@@ -110,6 +111,7 @@ export async function POST(request: NextRequest) {
       nextAction: typeof body.nextAction === 'string' ? body.nextAction : undefined,
       sourceText: typeof body.sourceText === 'string' ? body.sourceText : undefined,
       waitingOn: typeof body.waitingOn === 'string' ? body.waitingOn : undefined,
+      people: Array.isArray(body.people) ? cleanPeople(body.people) : undefined,
       important: typeof body.important === 'boolean' ? body.important : false,
       urgent: typeof body.urgent === 'boolean' ? body.urgent : false,
     }, user.email, user.uid); // Pass user email and ID

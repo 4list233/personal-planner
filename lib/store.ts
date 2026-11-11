@@ -141,8 +141,8 @@ interface PlannerStore {
   /** Removes an unsaved local draft. Never touches Notion. */
   discardDraft: (id: string) => void;
   submitTask: (id: string) => Promise<void>;
-  /** Creates a row in Inbox from just a title. */
-  addQuickTask: (title: string) => Promise<void>;
+  /** Creates a row from a title, in Inbox unless `placement` puts it elsewhere. */
+  addQuickTask: (title: string, placement?: Partial<Task>) => Promise<void>;
   /** Apply a change on screen, write it to Notion, undo it on screen if that fails. */
   saveChange: (id: string, patch: Partial<Task>) => Promise<boolean>;
   completeTask: (id: string) => Promise<void>;
@@ -457,6 +457,7 @@ export const usePlannerStore = create<PlannerStore>((set, get) => ({
           nextAction: task.nextAction,
           sourceText: task.sourceText,
           waitingOn: task.waitingOn,
+          people: task.people,
           important: task.important ?? false,
           urgent: task.urgent ?? false,
         }),
@@ -478,7 +479,7 @@ export const usePlannerStore = create<PlannerStore>((set, get) => ({
       setPendingSync(id, false);
     }
   },
-  addQuickTask: async (title) => {
+  addQuickTask: async (title, placement = {}) => {
     const id = `temp-${Date.now()}`;
     get().addTask({
       id,
@@ -488,6 +489,7 @@ export const usePlannerStore = create<PlannerStore>((set, get) => ({
       stage: 'Inbox',
       weekday: 'No Weekdays',
       todoItems: [],
+      ...placement,
     });
     await get().submitTask(id);
   },

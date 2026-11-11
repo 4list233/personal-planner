@@ -147,3 +147,55 @@ export function reopenPatch(
   const stage: Stage = planned === today ? 'Today' : planned === tomorrow ? 'This Week' : 'Inbox';
   return { stage, status: statusForStage(stage) };
 }
+
+/**
+ * The day an open task is planned for, as the week planner shows it. Rows the
+ * board puts on Today or Tomorrow without a date count as that day, so both
+ * views agree.
+ */
+export function plannedFor(task: Task, today: string, tomorrow: string): string | null {
+  if (!isOpen(task)) return null;
+  const placement = placementOf(task, today, tomorrow);
+  if (placement === 'today') return today;
+  if (placement === 'tomorrow') return tomorrow;
+  return dayKey(task.plannedDay);
+}
+
+// The week planner looks this many days ahead. Past it, Stage stays Inbox
+// rather than claiming This Week for something weeks away.
+const WEEK_DAYS = 7;
+
+/** What dropping a task on a day in the week planner writes. */
+export function patchForDay(task: Task, day: string, today: string, tomorrow: string): Partial<Task> {
+  if (day === today) return patchForMove(task, 'today', today, tomorrow);
+  if (day === tomorrow) return patchForMove(task, 'tomorrow', today, tomorrow);
+  // To Do, not Doing Tomorrow: the rollup would promote that the next morning,
+  // not on the planned day. On the day itself Planned Day puts it on Today.
+  const stage: Stage = day < addDays(today, WEEK_DAYS) ? 'This Week' : 'Inbox';
+  return { plannedDay: day, stage, status: 'To Do' };
+}
+
+export function daysFrom(start: string, count: number = WEEK_DAYS): string[] {
+  return Array.from({ length: count }, (_, offset) => addDays(start, offset));
+}
+
+/** Everyone named on any task, with how many open tasks each is on, busiest first. */
+export function peopleIn(tasks: Task[]): { name: string; open: number }[] {
+  const counts = new Map<string, number>();
+  for (const task of tasks) {
+    for (const name of task.people ?? []) {
+      counts.set(name, (counts.get(name) ?? 0) + (isOpen(task) ? 1 : 0));
+    }
+  }
+  return [...counts]
+    .map(([name, open]) => ({ name, open }))
+    .sort((a, b) => b.open - a.open || a.name.localeCompare(b.name));
+}
+
+/** A subtask's @owner names this person: exact, or their first name. */
+export function ownerMatches(owner: string | undefined, person: string): boolean {
+  if (!owner) return false;
+  const want = person.trim().toLowerCase();
+  const got = owner.trim().toLowerCase();
+  return got === want || want.split(/\s+/)[0] === got;
+}

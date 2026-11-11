@@ -19,6 +19,24 @@ const PRIORITIES = ['P1', 'P2', 'P3'] as const;
 const PROJECTS = ['Velox', 'School', 'Personal', 'Leads', 'Other'] as const;
 const BUCKETS = ['Mine', 'Dispatch', 'Follow-up', 'Watch', 'Long-term'] as const;
 
+// Notion multi-select option names can't contain commas, and 100 characters is
+// Notion's limit on an option name.
+const person = z
+  .string()
+  .trim()
+  .min(1)
+  .max(100)
+  .refine((name) => !name.includes(','), 'A name cannot contain a comma');
+
+/** Valid, unique names from a create request; anything that isn't a valid name is dropped. */
+export function cleanPeople(values: unknown[]): string[] {
+  const names = values.flatMap((value) => {
+    const parsed = person.safeParse(value);
+    return parsed.success ? [parsed.data] : [];
+  });
+  return [...new Set(names)].slice(0, 20);
+}
+
 const day = z.string().regex(/^\d{4}-\d{2}-\d{2}/, 'Expected a YYYY-MM-DD date').nullable();
 
 const patchSchema = z
@@ -34,6 +52,8 @@ const patchSchema = z
     nextAction: z.string().nullable(),
     sourceText: z.string().nullable(),
     waitingOn: z.string().nullable(),
+    // 20 is far more people than one task needs, and keeps a request small.
+    people: z.array(person).max(20).transform((names) => [...new Set(names)]),
     commentsText: z.string(),
     important: z.boolean(),
     urgent: z.boolean(),
