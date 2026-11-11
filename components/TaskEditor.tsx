@@ -5,23 +5,13 @@ import { format } from 'date-fns';
 import { Calendar, Clock, MessageSquare, X } from 'lucide-react';
 import { usePlannerStore } from '@/lib/store';
 import { columnForTask, isStale, statusForStage } from '@/lib/planner';
-import type { Bucket, Priority, ProjectName, Stage, Task, TodoItem, Weekday } from '@/lib/types';
+import type { Bucket, Priority, ProjectName, Stage, Task, TodoItem } from '@/lib/types';
 import { daysUntilDueColorClass, formatDaysUntilDue } from '@/lib/formatters';
 
 const STAGES: Stage[] = ['Inbox', 'This Week', 'Today', 'In Progress', 'Waiting', 'Done'];
 const PRIORITIES: Priority[] = ['P1', 'P2', 'P3'];
 const PROJECTS: ProjectName[] = ['Velox', 'School', 'Personal', 'Leads', 'Other'];
 const BUCKETS: Bucket[] = ['Mine', 'Dispatch', 'Follow-up', 'Watch', 'Long-term'];
-const WEEKDAYS: Weekday[] = [
-  'No Weekdays',
-  'Sunday',
-  'Monday',
-  'Tuesday',
-  'Wednesday',
-  'Thursday',
-  'Friday',
-  'Saturday',
-];
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -35,19 +25,10 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 const selectClass =
   'w-full sm:w-auto px-3 py-1.5 rounded-md text-sm font-medium border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500';
 
-interface TaskEditorProps {
-  task: Task;
-  variant: 'modal' | 'page';
-  onClose?: () => void;
-  onEdit?: () => void;
-}
-
-export default function TaskEditor({ task, variant, onClose, onEdit }: TaskEditorProps) {
-  const { setIsModalOpen, updateTask, deleteTask, submitTask } = usePlannerStore();
-  const edit = (patch: Partial<Task>) => {
-    onEdit?.();
-    updateTask(task.id, patch);
-  };
+// The form for a new task that isn't in Notion yet. Existing tasks use TaskDetail.
+export default function TaskEditor({ task }: { task: Task }) {
+  const { setIsModalOpen, updateTask, discardDraft, submitTask } = usePlannerStore();
+  const edit = (patch: Partial<Task>) => updateTask(task.id, patch);
   const [titleDraft, setTitleDraft] = useState(task.title);
   const [titleError, setTitleError] = useState<string | null>(null);
   const [dateError, setDateError] = useState<string | null>(null);
@@ -77,17 +58,9 @@ export default function TaskEditor({ task, variant, onClose, onEdit }: TaskEdito
     }
   };
 
-  const finishClose = () => {
-    if (onClose) onClose();
-    else setIsModalOpen(false);
-  };
-
-  const handleClose = async () => {
-    const isQueueDraft = Boolean(task.queueId);
-    if (task.id.startsWith('temp-') && !isQueueDraft) {
-      await deleteTask(task.id);
-    }
-    finishClose();
+  const handleClose = () => {
+    if (!task.queueId) discardDraft(task.id);
+    setIsModalOpen(false);
     dispatchModalAction('cancel');
   };
 
@@ -109,7 +82,7 @@ export default function TaskEditor({ task, variant, onClose, onEdit }: TaskEdito
     }
     await submitTask(task.id);
     dispatchModalAction('submit');
-    if (variant === 'modal') setIsModalOpen(false);
+    setIsModalOpen(false);
   };
 
   const closeRef = useRef(handleClose);
@@ -140,12 +113,12 @@ export default function TaskEditor({ task, variant, onClose, onEdit }: TaskEdito
     };
 
     document.addEventListener('keydown', handleKeyDown);
-    if (variant === 'modal') document.body.style.overflow = 'hidden';
+    document.body.style.overflow = 'hidden';
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
-      if (variant === 'modal') document.body.style.overflow = 'unset';
+      document.body.style.overflow = 'unset';
     };
-  }, [variant, task.id]);
+  }, [task.id]);
 
   const hidden = columnForTask(task) === null;
   const stale = isStale(task.lastEditedTime);
@@ -420,7 +393,7 @@ export default function TaskEditor({ task, variant, onClose, onEdit }: TaskEdito
         <div className="border-t border-gray-200 pt-6">
           <h3 className="text-sm font-semibold text-gray-700 mb-1">Checklist</h3>
           <p className="text-xs text-gray-400 mb-4">
-            Saved as to-do blocks on the Notion page, and mirrored to the Todos property.
+            Saved to the Todos field in Notion.
           </p>
           <div className="space-y-2">
             {(task.todoItems || []).map((item) => (
@@ -493,20 +466,6 @@ export default function TaskEditor({ task, variant, onClose, onEdit }: TaskEdito
         <details className="border-t border-gray-200 pt-4">
           <summary className="text-sm text-gray-500 cursor-pointer">Older fields</summary>
           <div className="mt-4 flex flex-wrap gap-4">
-            <Field label="Weekday">
-              <select
-                aria-label="Weekday"
-                value={task.weekday || 'No Weekdays'}
-                onChange={(event) => edit({ weekday: event.target.value as Weekday })}
-                className={selectClass}
-              >
-                {WEEKDAYS.map((day) => (
-                  <option key={day} value={day}>
-                    {day}
-                  </option>
-                ))}
-              </select>
-            </Field>
             <div className="flex items-end gap-2 pb-1">
               <button
                 type="button"
@@ -559,10 +518,6 @@ export default function TaskEditor({ task, variant, onClose, onEdit }: TaskEdito
       </div>
     </>
   );
-
-  if (variant === 'page') {
-    return <div className="bg-white rounded-xl border border-gray-200 shadow-sm">{form}</div>;
-  }
 
   return (
     <div

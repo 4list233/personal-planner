@@ -48,3 +48,13 @@ export function daysUntilDueColorClass(days?: number): string {
   if (days <= 7) return 'text-yellow-600';
   return 'text-gray-600';
 }
+
+/** "Nov 11", from an ISO date, without a timezone shifting the day. */
+export function shortDate(iso: string): string {
+  const [year, month, day] = iso.slice(0, 10).split('-').map(Number);
+  return new Date(Date.UTC(year, month - 1, day, 12)).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'UTC',
+  });
+}

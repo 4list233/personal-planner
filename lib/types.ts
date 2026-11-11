@@ -62,11 +62,10 @@ export interface Task {
   waitingOn?: string | null;
   lastEditedTime?: string;
   userEmail?: string;
-  /**
-   * Local-only. False means a save may update the Todos property but must not
-   * rewrite page to-do blocks (the block list was never loaded).
-   */
-  syncChecklist?: boolean;
+  /** Notion Todos exactly as stored. Steps are parsed from this, never rebuilt. */
+  todosText?: string;
+  /** Notion Comments exactly as stored, blank lines included. */
+  commentsText?: string;
 }
 
 export type Quadrant = 'Q1' | 'Q2' | 'Q3' | 'Q4';
@@ -97,9 +96,3 @@ export interface TodoItem {
   completed: boolean;
 }
 
-export type ViewType = 'board' | 'weekdays' | 'calendar' | 'matrix';
-
-export interface ViewState {
-  currentView: ViewType;
-  setView: (view: ViewType) => void;
-}

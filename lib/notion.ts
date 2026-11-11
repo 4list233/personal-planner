@@ -3,23 +3,39 @@
 import {
   APIResponseError,
   Client,
-  isFullBlock,
   isFullDatabase,
   isFullDataSource,
   isFullPage,
 } from '@notionhq/client';
-import type { BlockObjectRequest, QueryDataSourceParameters } from '@notionhq/client';
+import type { QueryDataSourceParameters } from '@notionhq/client';
+import { withNotionRetry } from './notion-retry';
 import {
-  checklistFromSources,
   formatTodosText,
-  parseTodosText,
   richTextRequest,
   rowVisibleToUser,
   stageFromStatus,
   taskFromNotionPage,
   userEmailQueryFilter,
 } from './planner';
-import type { Task, TodoItem } from './types';
+import { applyStepOp, type StepOp } from './steps';
+import type { Task } from './types';
+import { isDone } from './views';
+
+export class TaskNotFoundError extends Error {
+  constructor() {
+    super('Task not found');
+  }
+}
+
+export class ArchiveNotAllowedError extends Error {
+  constructor() {
+    super('Only a finished task can be archived');
+  }
+}
+
+// Status and Stage define whether a task is finished. Dropping either one to
+// tolerate an old schema would leave a task half complete with no error.
+const NEVER_SKIP_PROPERTIES = new Set(['Status', 'Stage']);
 
 type NotionContext = {
   client: Client;
@@ -160,13 +176,16 @@ function taskToNotionProperties(task: Partial<Task>): Record<string, any> {
     };
   }
 
-  if (task.todoItems !== undefined) {
+  if (task.todosText !== undefined) {
+    properties.Todos = { rich_text: richTextRequest(task.todosText) };
+  } else if (task.todoItems !== undefined) {
     properties.Todos = { rich_text: richTextRequest(formatTodosText(task.todoItems)) };
   }
 
-  if (task.comments !== undefined) {
-    const commentsText = task.comments.join('\n');
-    properties.Comments = { rich_text: richTextRequest(commentsText) };
+  if (task.commentsText !== undefined) {
+    properties.Comments = { rich_text: richTextRequest(task.commentsText) };
+  } else if (task.comments !== undefined) {
+    properties.Comments = { rich_text: richTextRequest(task.comments.join('\n')) };
   }
 
   if ('nextAction' in task && task.nextAction !== undefined) {
@@ -192,57 +211,16 @@ function taskToNotionProperties(task: Partial<Task>): Record<string, any> {
   return properties;
 }
 
-function todoBlocks(items: TodoItem[]): BlockObjectRequest[] {
-  return items.map((item) => ({
-    type: 'to_do',
-    to_do: {
-      rich_text: richTextRequest(item.text || ' '),
-      checked: item.completed,
-    },
-  }));
-}
-
-async function createPage(
-  ctx: NotionContext,
-  properties: Record<string, any>,
-  children?: BlockObjectRequest[]
-) {
-  let pending = { ...properties };
-  let withChildren = children;
-  for (let attempt = 0; attempt < 8; attempt++) {
-    try {
-      return await ctx.client.pages.create({
-        parent: { data_source_id: ctx.dataSourceId },
-        properties: pending,
-        children: withChildren && withChildren.length > 0 ? withChildren : undefined,
-      } as any);
-    } catch (error) {
-      const missing = missingPropertyName(error);
-      if (missing && missing in pending) {
-        console.warn(`Skipping missing Notion property "${missing}"`);
-        delete pending[missing];
-        pending = { ...pending };
-        continue;
-      }
-      if (withChildren && withChildren.length > 0) {
-        console.warn('Notion rejected checklist blocks on create; saving the Todos property only');
-        withChildren = undefined;
-        continue;
-      }
-      throw error;
-    }
-  }
-  throw new Error('Failed to create Notion page');
-}
-
-async function updatePageProperties(client: Client, pageId: string, properties: Record<string, any>) {
+async function createPage(ctx: NotionContext, properties: Record<string, any>) {
   let pending = { ...properties };
   for (let attempt = 0; attempt < 8; attempt++) {
     try {
-      return await client.pages.update({
-        page_id: pageId,
-        properties: pending,
-      } as any);
+      return await withNotionRetry(() =>
+        ctx.client.pages.create({
+          parent: { data_source_id: ctx.dataSourceId },
+          properties: pending,
+        } as any)
+      );
     } catch (error) {
       const missing = missingPropertyName(error);
       if (!missing || !(missing in pending)) throw error;
@@ -251,65 +229,36 @@ async function updatePageProperties(client: Client, pageId: string, properties: 
       pending = { ...pending };
     }
   }
+  throw new Error('Failed to create Notion page');
+}
+
+async function updatePageProperties(
+  client: Client,
+  pageId: string,
+  properties: Record<string, any>,
+  retryConflicts = true
+) {
+  let pending = { ...properties };
+  for (let attempt = 0; attempt < 8; attempt++) {
+    try {
+      return await withNotionRetry(
+        () =>
+          client.pages.update({
+            page_id: pageId,
+            properties: pending,
+          } as any),
+        undefined,
+        retryConflicts
+      );
+    } catch (error) {
+      const missing = missingPropertyName(error);
+      if (!missing || !(missing in pending) || NEVER_SKIP_PROPERTIES.has(missing)) throw error;
+      console.warn(`Skipping missing Notion property "${missing}"`);
+      delete pending[missing];
+      pending = { ...pending };
+    }
+  }
   throw new Error('Failed to update Notion page properties');
-}
-
-async function listTodoBlocks(client: Client, pageId: string) {
-  const todos: Array<{ id: string; to_do: { rich_text: Array<{ plain_text?: string }>; checked?: boolean } }> = [];
-  let cursor: string | undefined;
-  let hasMore = true;
-  while (hasMore) {
-    const response = await client.blocks.children.list({
-      block_id: pageId,
-      start_cursor: cursor,
-      page_size: 100,
-    });
-    for (const block of response.results) {
-      if (!isFullBlock(block) || block.archived || block.in_trash || block.type !== 'to_do') continue;
-      todos.push(block);
-    }
-    hasMore = response.has_more;
-    cursor = response.next_cursor || undefined;
-  }
-  return todos;
-}
-
-function blockToTodo(block: { id: string; to_do: { rich_text: Array<{ plain_text?: string }>; checked?: boolean } }): TodoItem {
-  const text = (block.to_do.rich_text || []).map((part) => part.plain_text || '').join('');
-  return { id: block.id, text, completed: block.to_do.checked === true };
-}
-
-async function syncTodoBlocks(client: Client, pageId: string, items: TodoItem[]) {
-  const existing = await listTodoBlocks(client, pageId);
-  const shared = Math.min(existing.length, items.length);
-  for (let index = 0; index < shared; index++) {
-    const block = existing[index];
-    const item = items[index];
-    const current = (block.to_do.rich_text || []).map((part) => part.plain_text || '').join('');
-    if (current === item.text && block.to_do.checked === !!item.completed) continue;
-    await client.blocks.update({
-      block_id: block.id,
-      to_do: {
-        rich_text: richTextRequest(item.text || ' '),
-        checked: !!item.completed,
-      },
-    });
-  }
-
-  if (items.length > existing.length) {
-    const children = todoBlocks(items.slice(existing.length));
-    for (let index = 0; index < children.length; index += 100) {
-      await client.blocks.children.append({
-        block_id: pageId,
-        children: children.slice(index, index + 100),
-      });
-    }
-  }
-
-  // blocks.delete archives the block in trash. Other page content is left alone.
-  for (const block of existing.slice(items.length)) {
-    await client.blocks.delete({ block_id: block.id });
-  }
 }
 
 async function queryDataSourcePages(
@@ -320,14 +269,16 @@ async function queryDataSourcePages(
   let cursor: string | undefined;
   let hasMore = true;
   while (hasMore) {
-    const response = await ctx.client.dataSources.query({
-      data_source_id: ctx.dataSourceId,
-      page_size: 100,
-      start_cursor: cursor,
-      filter,
-      sorts: [{ timestamp: 'last_edited_time', direction: 'descending' }],
-      result_type: 'page',
-    });
+    const response = await withNotionRetry(() =>
+      ctx.client.dataSources.query({
+        data_source_id: ctx.dataSourceId,
+        page_size: 100,
+        start_cursor: cursor,
+        filter,
+        sorts: [{ timestamp: 'last_edited_time', direction: 'descending' }],
+        result_type: 'page',
+      })
+    );
     for (const result of response.results) {
       if (isFullPage(result) && !result.archived && !result.in_trash) pages.push(result);
     }
@@ -456,26 +407,20 @@ export async function fetchTasksFromNotion(userEmail?: string): Promise<Task[]> 
   }
 }
 
+async function ownedPage(ctx: NotionContext, taskId: string, userEmail?: string) {
+  const page = await withNotionRetry(() => ctx.client.pages.retrieve({ page_id: taskId }));
+  if (!isFullPage(page) || page.archived || page.in_trash || !pageBelongs(page, ctx)) {
+    throw new TaskNotFoundError();
+  }
+  const task = taskFromNotionPage(page);
+  if (!rowVisibleToUser(task.userEmail, userEmail)) throw new TaskNotFoundError();
+  return task;
+}
+
 export async function fetchTaskFromNotion(taskId: string, userEmail?: string): Promise<Task> {
   const ctx = await resolveNotion();
   if (!ctx) throw new Error('Notion not configured');
-
-  const page = await ctx.client.pages.retrieve({ page_id: taskId });
-  if (!isFullPage(page) || page.archived || page.in_trash || !pageBelongs(page, ctx)) {
-    throw new Error('Task not found');
-  }
-
-  const task = taskFromNotionPage(page);
-  if (!rowVisibleToUser(task.userEmail, userEmail)) {
-    throw new Error('Task not found');
-  }
-
-  const blocks = await listTodoBlocks(ctx.client, page.id);
-  task.todoItems = checklistFromSources(
-    blocks.map(blockToTodo),
-    task.todoItems || parseTodosText('')
-  );
-  return task;
+  return ownedPage(ctx, taskId, userEmail);
 }
 
 /**
@@ -502,43 +447,51 @@ export async function createTaskInNotion(
     properties['User ID'] = { rich_text: richTextRequest(userId) };
   }
 
-  const page = await createPage(ctx, properties, todoBlocks(task.todoItems || []));
+  const page = await createPage(ctx, properties);
   if (!isFullPage(page)) {
     throw new Error('Notion returned a partial page');
   }
-  const created = taskFromNotionPage(page);
-  if (task.todoItems && task.todoItems.length > 0) {
-    created.todoItems = checklistFromSources(task.todoItems, created.todoItems || []);
-  }
-  return created;
+  return taskFromNotionPage(page);
 }
 
-export async function updateTaskInNotion(taskId: string, updates: Partial<Task>): Promise<Task> {
+export async function updateTaskInNotion(
+  taskId: string,
+  updates: Partial<Task>,
+  { retryConflicts = true }: { retryConflicts?: boolean } = {}
+): Promise<Task> {
   const ctx = await resolveNotion();
   if (!ctx) throw new Error('Notion not configured');
 
-  const page = await updatePageProperties(ctx.client, taskId, taskToNotionProperties(updates));
-  const full = isFullPage(page) ? page : await ctx.client.pages.retrieve({ page_id: taskId });
+  const page = await updatePageProperties(ctx.client, taskId, taskToNotionProperties(updates), retryConflicts);
+  const full = isFullPage(page)
+    ? page
+    : await withNotionRetry(() => ctx.client.pages.retrieve({ page_id: taskId }));
   if (!isFullPage(full)) throw new Error('Notion returned a partial page');
-
-  const task = taskFromNotionPage(full);
-  if (updates.todoItems && updates.syncChecklist !== false) {
-    await syncTodoBlocks(ctx.client, taskId, updates.todoItems);
-    const blocks = await listTodoBlocks(ctx.client, taskId);
-    task.todoItems = checklistFromSources(blocks.map(blockToTodo), updates.todoItems);
-  }
-  task.syncChecklist = undefined;
-  return task;
+  return taskFromNotionPage(full);
 }
 
-/** Archive a task. Notion keeps the page in trash; this never permanently deletes it. */
-export async function deleteTaskInNotion(taskId: string): Promise<void> {
+/** A signed-in user's edit: the row must be theirs, and Archive needs a finished task. */
+export async function updateTaskForUser(
+  taskId: string,
+  updates: Partial<Task>,
+  userEmail: string
+): Promise<Task> {
   const ctx = await resolveNotion();
   if (!ctx) throw new Error('Notion not configured');
+  const current = await ownedPage(ctx, taskId, userEmail);
+  if (updates.status === 'Archived' && !isDone(current)) throw new ArchiveNotAllowedError();
+  return updateTaskInNotion(taskId, updates);
+}
 
-  await ctx.client.pages.update({
-    page_id: taskId,
-    archived: true,
+export async function applyStepOpForUser(taskId: string, op: StepOp, userEmail: string): Promise<Task> {
+  const ctx = await resolveNotion();
+  if (!ctx) throw new Error('Notion not configured');
+  // A conflict means someone else wrote this row between the read and the
+  // write, so redo the step on a fresh read rather than resend the old text.
+  return withNotionRetry(async () => {
+    const current = await ownedPage(ctx, taskId, userEmail);
+    const todosText = applyStepOp(current.todosText ?? '', op);
+    return updateTaskInNotion(taskId, { todosText }, { retryConflicts: false });
   });
 }
 

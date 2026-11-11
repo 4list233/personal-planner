@@ -36,7 +36,7 @@ export default function ImageTaskImport() {
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [queueSource, setQueueSource] = useState<'gemini-image' | 'gemini-text' | null>(null);
   const [queueId, setQueueId] = useState<string | null>(null);
-  const { addTask, setIsModalOpen, setSelectedTask, deleteTask } = usePlannerStore();
+  const { addTask, setIsModalOpen, setSelectedTask, discardDraft } = usePlannerStore();
 
   useEffect(() => {
     const handleModalAction = (event: Event) => {
@@ -129,7 +129,7 @@ export default function ImageTaskImport() {
     setSelectedTask(null);
 
     if (activeTaskId && mode === 'skipped') {
-      void deleteTask(activeTaskId);
+      discardDraft(activeTaskId);
     }
     if (mode === 'submitted' || mode === 'skipped') {
       setActiveTaskId(null);
@@ -161,7 +161,7 @@ export default function ImageTaskImport() {
 
   const handleSkipQueue = () => {
     if (activeTaskId) {
-      void deleteTask(activeTaskId);
+      discardDraft(activeTaskId);
     }
     setTaskQueue([]);
     setShowQueueInfo(false);

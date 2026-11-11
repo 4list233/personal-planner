@@ -6,7 +6,7 @@
 // NEVER demotes "Doing Today" back to "To Do". Auto-archive is forbidden.
 
 import { NextRequest, NextResponse } from 'next/server';
-import { fetchTasksFromNotion, updateTaskInNotion } from '@/lib/notion';
+import { fetchTaskFromNotion, fetchTasksFromNotion, updateTaskInNotion } from '@/lib/notion';
 import { Task, TaskStatus, Weekday } from '@/lib/types';
 import { weekdayToDow, WEEKDAY_NAMES } from '@/lib/scheduling';
 
@@ -58,6 +58,9 @@ async function planUpdates(allTasks: Task[], todayDow: number, tomorrowDow: numb
   for (const t of allTasks) {
     // CARRYOVER RULE — DO NOT CHANGE WITHOUT FOREST'S APPROVAL.
     if (t.status === 'Archived') continue;
+    // Finished work must stay finished. Without this, a Done task with a
+    // Weekdays value is pulled back to Doing Today every week.
+    if (t.status === 'Done' || t.stage === 'Done') continue;
     if (t.status === 'Doing Today') continue; // carryover, no change
     if (t.status === 'Doing Tomorrow') {
       updates.push({
@@ -160,6 +163,10 @@ async function handle(req: NextRequest, dryRun: boolean) {
     if ((u.patch.status as TaskStatus) === 'Archived') {
       throw new Error('Refusing to set status=Archived from cron');
     }
+    // The plan comes from a list read earlier in this run. Completing a task
+    // since then must win, or it comes back as Stage=Done, Status=Doing Today.
+    const latest = await fetchTaskFromNotion(u.id);
+    if (latest.status !== u.fromStatus || latest.stage === 'Done') return;
     await updateTaskInNotion(u.id, u.patch);
   });
 

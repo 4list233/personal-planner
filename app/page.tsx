@@ -1,39 +1,36 @@
 'use client';
 
-// Disable caching of this page in production by using a no-store fetch for data already.
-// (Removed export const dynamic to avoid name clash with next/dynamic import.)
-
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { usePlannerStore, setAuthTokenGetter } from '@/lib/store';
 import { useAuth } from '@/lib/auth-context';
-import { effectiveView } from '@/lib/planner';
+import { useIsPhone } from '@/lib/use-board-lanes';
+import { useBackgroundRefresh, useDetailUrl, usePlannerKeyboard } from '@/lib/use-planner-sync';
 import DashboardHeader from '@/components/DashboardHeader';
+import PhoneLists from '@/components/PhoneLists';
 import ViewErrorBoundary from '@/components/ViewErrorBoundary';
 
-// Lazy load views to avoid compilation hang
+// Lazy load the heavy views to avoid compilation hang
 const BoardView = dynamic(() => import('@/components/BoardView'), { ssr: false });
-const WeekdaysView = dynamic(() => import('@/components/WeekdaysView'), { ssr: false });
-const CalendarView = dynamic(() => import('@/components/CalendarView'), { ssr: false });
-const MatrixView = dynamic(() => import('@/components/MatrixView'), { ssr: false });
 const TaskModal = dynamic(() => import('@/components/TaskModal'), { ssr: false });
-
-const VIEW_TITLES: Record<string, string> = {
-  board: 'Personal Planner',
-  weekdays: 'Weekdays — Personal Planner',
-  calendar: 'Calendar — Personal Planner',
-  matrix: 'Matrix — Personal Planner',
-};
+const TaskDetail = dynamic(() => import('@/components/TaskDetail'), { ssr: false });
 
 export default function Home() {
   const router = useRouter();
   const { user, loading: authLoading, getIdToken } = useAuth();
-  const currentView = usePlannerStore((s) => s.currentView);
-  const view = effectiveView(currentView);
   const fetchTasks = usePlannerStore((s) => s.fetchTasks);
+  const loadCachedTasks = usePlannerStore((s) => s.loadCachedTasks);
+  const setCacheOwner = usePlannerStore((s) => s.setCacheOwner);
   const lastFetchedAt = usePlannerStore((s) => s.lastFetchedAt);
+  const hasRows = usePlannerStore((s) => s.tasks.length > 0);
+  const syncError = usePlannerStore((s) => s.syncError);
+  const isPhone = useIsPhone();
   const [mounted, setMounted] = useState(false);
+
+  useDetailUrl();
+  usePlannerKeyboard();
+  useBackgroundRefresh(!!user);
 
   // Auth guard: redirect to login if not authenticated
   useEffect(() => {
@@ -41,25 +38,6 @@ export default function Home() {
       router.push('/login');
     }
   }, [user, authLoading, router]);
-
-  // Set up auth token getter for the store. getIdToken is recreated on every
-  // AuthProvider render so we register it via a ref-stable user id dependency
-  // and read the latest function inside the store call instead.
-  useEffect(() => {
-    if (user) {
-      setAuthTokenGetter(getIdToken);
-    }
-    // intentionally not depending on getIdToken — it's recreated each render
-    // and would cause this to re-run on every render of AuthProvider.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.uid]);
-
-  // Update document title to reflect the active view
-  useEffect(() => {
-    if (typeof document !== 'undefined') {
-      document.title = VIEW_TITLES[view] ?? 'Personal Planner';
-    }
-  }, [view]);
 
   useEffect(() => {
     setMounted(true);
@@ -69,21 +47,23 @@ export default function Home() {
   // by the store. Re-runs only when the signed-in user actually changes.
   useEffect(() => {
     if (!user) return;
-    fetchTasks();
-  }, [user?.uid, fetchTasks]);
+    // getIdToken is recreated every render, so it is registered here against
+    // the stable uid and has to happen before the fetch below.
+    setAuthTokenGetter(getIdToken);
+    setCacheOwner(user.uid);
+    loadCachedTasks(user.uid);
+    void fetchTasks();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.uid, fetchTasks, loadCachedTasks, setCacheOwner]);
 
-  // Loading until we've completed at least one fetch for this user.
-  const loading = !!user && lastFetchedAt === null;
+  // Cached rows paint at once; a first load with no cache has nothing to show.
+  const loading = !!user && lastFetchedAt === null && !hasRows && !syncError;
 
   // Show loading state while checking auth or loading tasks
   if (!mounted || authLoading || loading) {
     return (
-      <div className="min-h-screen bg-gray-50">
-        <div className="flex items-center justify-center h-screen">
-          <div className="text-gray-500">
-            {authLoading ? 'Authenticating...' : loading ? 'Loading tasks...' : 'Loading...'}
-          </div>
-        </div>
+      <div className="min-h-screen bg-ground font-sans flex items-center justify-center text-muted">
+        {authLoading ? 'Signing in…' : 'Loading your tasks…'}
       </div>
     );
   }
@@ -94,24 +74,16 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-ground text-ink font-sans">
       <DashboardHeader />
-      
-      <main className="max-w-[100vw] mx-auto px-4 py-4 overflow-x-hidden">
-        <ViewErrorBoundary
-          key={view}
-          viewName={
-            view.charAt(0).toUpperCase() + view.slice(1)
-          }
-          title={VIEW_TITLES[view] ?? 'Personal Planner'}
-        >
-          {view === 'board' && <BoardView />}
-          {view === 'weekdays' && <WeekdaysView />}
-          {view === 'calendar' && <CalendarView />}
-          {view === 'matrix' && <MatrixView />}
-        </ViewErrorBoundary>
+      <main className="flex items-start gap-4 px-4 md:px-6 pb-6">
+        <div className="flex-1 min-w-0">
+          <ViewErrorBoundary viewName="Board" title="Personal Planner">
+            {isPhone ? <PhoneLists /> : <BoardView />}
+          </ViewErrorBoundary>
+        </div>
+        <TaskDetail />
       </main>
-
       <TaskModal />
     </div>
   );

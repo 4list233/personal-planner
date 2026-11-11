@@ -1,7 +1,19 @@
 import { create } from 'zustand';
-import { Task, ViewType } from './types';
-import { toast } from './toast';
-import { daysUntilDueInUserTz } from './time';
+import type { Task } from './types';
+import { toast, useToastStore } from './toast';
+import { daysUntilDueInUserTz, todayInUserTz } from './time';
+import { applyStepOp, StepConflictError, type StepOp } from './steps';
+import { mergeIncoming } from './sync';
+import {
+  addDays,
+  COMPLETE_PATCH,
+  isArchived,
+  isDone,
+  patchForMove,
+  reopenPatch,
+  type MoveTarget,
+  type PriorState,
+} from './views';
 
 // Auth token getter (set by AuthProvider in the app)
 let getAuthTokenFn: (() => Promise<string>) | null = null;
@@ -27,15 +39,10 @@ export async function getAuthHeaders(): Promise<HeadersInit> {
   return headers;
 }
 
-// Helper function to calculate days until due in the user's timezone.
-function calculateDaysUntilDue(dueDate?: string): number | undefined {
-  return daysUntilDueInUserTz(dueDate);
-}
-
 // Normalize a user-provided date. Reject malformed years (>4 digits) and
 // clamp to [1970-01-01, 2100-12-31] to keep Notion happy.
-function normalizeDate(input?: string): { value?: string; error?: string } {
-  if (input === undefined) return {};
+function normalizeDate(input?: string | null): { value?: string; error?: string } {
+  if (input === undefined || input === null) return {};
   if (input === '') return { value: undefined };
   const datePart = input.split('T')[0];
   const m = /^(-?\d+)-(\d{2})-(\d{2})$/.exec(datePart);
@@ -64,10 +71,19 @@ interface RequestFailure {
   body: string;
 }
 
+type FetchResult = { ok: true; data: any } | { ok: false; failure: RequestFailure };
+
+// Creating a row or editing a step isn't safe to replay: if Notion applied it
+// and only the response was lost, a replay applies it twice. A 429 is the one
+// answer that proves the request was refused.
+const retryOnlyIfRefused = (status: number, attempt: number) => status === 429 && attempt < 2;
+
 async function attemptFetch(
   url: string,
-  init: RequestInit
-): Promise<{ ok: true; data: any } | { ok: false; failure: RequestFailure }> {
+  init: RequestInit,
+  retry: (status: number, attempt: number) => boolean = shouldRetry,
+  retryNetworkError = true
+): Promise<FetchResult> {
   let attempt = 0;
   while (true) {
     attempt += 1;
@@ -75,7 +91,7 @@ async function attemptFetch(
     try {
       res = await fetch(url, init);
     } catch {
-      if (attempt < 2) {
+      if (retryNetworkError && attempt < 2) {
         await new Promise((r) => setTimeout(r, 200));
         continue;
       }
@@ -86,7 +102,7 @@ async function attemptFetch(
       return { ok: true, data };
     }
     const body = await res.text().catch(() => res.statusText);
-    if (shouldRetry(res.status, attempt)) {
+    if (retry(res.status, attempt)) {
       await new Promise((r) => setTimeout(r, 200 * attempt));
       continue;
     }
@@ -94,39 +110,147 @@ async function attemptFetch(
   }
 }
 
+export interface EditingField {
+  taskId: string;
+  field: string;
+}
+
 interface PlannerStore {
   tasks: Task[];
-  currentView: ViewType;
   selectedTask: Task | null;
   isModalOpen: boolean;
-  /** Multi-selection set used by the Matrix view. */
-  selectedTaskIds: Set<string>;
-  /** True while a fetchTasks request is in flight — used to dedupe. */
+  /** Row open in the detail popup. Mirrored to ?task=<id>. */
+  detailTaskId: string | null;
+  /** The field being typed in, which a background refresh must leave alone. */
+  editing: EditingField | null;
+  /** Newer copies of the row being edited, held until the user asks for them. */
+  heldUpdates: Record<string, Task>;
+  focusedTaskId: string | null;
+  /** Rows in on-screen order, for j/k. */
+  visibleTaskIds: string[];
   isFetching: boolean;
   /** Epoch ms of the last successful fetch — used to skip recent refetches. */
   lastFetchedAt: number | null;
+  syncError: boolean;
+  /** Epoch ms of each row's last confirmed save, so an older read can't undo it. */
+  savedAt: Record<string, number>;
   setTasks: (tasks: Task[]) => void;
   addTask: (task: Task) => void;
   updateTask: (id: string, updates: Partial<Task>) => void;
-  deleteTask: (id: string) => Promise<void> | void;
+  /** Removes an unsaved local draft. Never touches Notion. */
+  discardDraft: (id: string) => void;
   submitTask: (id: string) => Promise<void>;
-  submitPartial: (id: string, updates: Partial<Task>) => Promise<void>; // persist only provided fields
-  fetchTasks: (opts?: { force?: boolean }) => Promise<void>;
-  setCurrentView: (view: ViewType) => void;
+  /** Creates a row in Inbox from just a title. */
+  addQuickTask: (title: string) => Promise<void>;
+  /** Apply a change on screen, write it to Notion, undo it on screen if that fails. */
+  saveChange: (id: string, patch: Partial<Task>) => Promise<boolean>;
+  completeTask: (id: string) => Promise<void>;
+  reopenTask: (id: string) => Promise<void>;
+  archiveTask: (id: string) => Promise<void>;
+  moveTask: (id: string, target: MoveTarget) => Promise<void>;
+  changeSteps: (id: string, op: StepOp) => Promise<void>;
+  fetchTasks: (opts?: { force?: boolean; background?: boolean }) => Promise<void>;
+  loadCachedTasks: (uid: string) => void;
+  setCacheOwner: (uid: string | null) => void;
   setSelectedTask: (task: Task | null) => void;
   setIsModalOpen: (isOpen: boolean) => void;
-  toggleSelection: (id: string) => void;
-  clearSelection: () => void;
-  bulkUpdate: (
-    updates: Array<{ id: string; patch: Partial<Task> }>,
-    opts?: { concurrency?: number }
-  ) => Promise<{ ok: number; failed: number }>;
+  openDetail: (id: string) => void;
+  closeDetail: () => void;
+  setDetailFromUrl: () => void;
+  setEditing: (editing: EditingField | null) => void;
+  applyHeldUpdate: (id: string) => void;
+  setFocusedTask: (id: string | null) => void;
+  setVisibleTaskIds: (ids: string[]) => void;
 }
 
 // Module-scoped guards so React StrictMode's double-invoked effects can't
 // race two parallel fetches before the first one updates state.
 let inFlightFetch: Promise<void> | null = null;
 const FETCH_DEDUPE_MS = 5000;
+
+// Notion's list query can trail a page update by a few seconds, so a list read
+// just after a save may still hold the old row. A bot edit landing inside this
+// window just shows up on the next refresh.
+const STALE_READ_GRACE_MS = 10_000;
+
+// Long enough to catch a misclick, per the spec's "about 5 seconds".
+const UNDO_WINDOW_MS = 5000;
+
+// Writes to one row run in order, so Undo can't reach Notion before the
+// Complete it is undoing.
+const writeQueues = new Map<string, { tail: Promise<unknown>; count: number }>();
+
+function enqueueWrite<T>(id: string, work: () => Promise<T>): Promise<T> {
+  const queue = writeQueues.get(id) ?? { tail: Promise.resolve(), count: 0 };
+  queue.count += 1;
+  writeQueues.set(id, queue);
+  const run = queue.tail.then(work);
+  queue.tail = run
+    .catch(() => undefined)
+    .finally(() => {
+      queue.count -= 1;
+      if (queue.count === 0) writeQueues.delete(id);
+    });
+  return run;
+}
+
+const isLastQueuedWrite = (id: string) => (writeQueues.get(id)?.count ?? 0) <= 1;
+
+// What Notion is known to hold for a row with writes queued. Restoring this
+// after a failure can't bring back an earlier edit that never saved.
+const confirmedRows = new Map<string, Task>();
+
+function safeStorage(): Storage | null {
+  try {
+    return typeof window === 'undefined' ? null : window.localStorage;
+  } catch {
+    // Private browsing and blocked site data make the accessor throw.
+    return null;
+  }
+}
+
+function readJson<T>(key: string): T | null {
+  try {
+    const raw = safeStorage()?.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : null;
+  } catch (error) {
+    console.warn(`Ignoring unreadable local data at ${key}`, error);
+    return null;
+  }
+}
+
+function writeStorage(key: string, value: string | null) {
+  try {
+    const storage = safeStorage();
+    if (value === null) storage?.removeItem(key);
+    else storage?.setItem(key, value);
+  } catch (error) {
+    // Quota errors only cost the cache; Notion still holds the data.
+    console.warn(`Could not update local data at ${key}`, error);
+  }
+}
+
+const priorStateKey = (id: string) => `planner.prior.${id}`;
+const taskCacheKey = (uid: string) => `planner.tasks.v1.${uid}`;
+let cacheOwner: string | null = null;
+
+function dayPair() {
+  const today = todayInUserTz();
+  return { today, tomorrow: addDays(today, 1) };
+}
+
+function replaceRow(id: string, row: Task) {
+  usePlannerStore.setState((state) => {
+    // The saved row is newer than any copy held back during typing, so applying
+    // that copy later would bring old values back.
+    const { [id]: _superseded, ...heldUpdates } = state.heldUpdates;
+    return {
+      tasks: state.tasks.map((t) => (t.id === id ? { ...row, pendingSync: undefined } : t)),
+      selectedTask: state.selectedTask?.id === id ? { ...row, pendingSync: undefined } : state.selectedTask,
+      heldUpdates,
+    };
+  });
+}
 
 function setPendingSync(taskId: string, pending: boolean) {
   usePlannerStore.setState((state) => ({
@@ -151,17 +275,77 @@ function showSaveError(title: string, retry: () => void | Promise<void>, status:
   }
 }
 
+/** Queues one request for a row, folds the server's copy back in, and restores the row if it fails. */
+async function sendWrite(
+  id: string,
+  url: string,
+  method: string,
+  body: unknown,
+  before: Task,
+  replayable = true
+): Promise<RequestFailure | null> {
+  if (!confirmedRows.has(id)) confirmedRows.set(id, before);
+  setPendingSync(id, true);
+  return enqueueWrite(id, async () => {
+    let failure: RequestFailure | null = null;
+    try {
+      const headers = await getAuthHeaders();
+      const init = { method, headers, body: JSON.stringify(body) };
+      const result = replayable
+        ? await attemptFetch(url, init)
+        : await attemptFetch(url, init, retryOnlyIfRefused, false);
+      if (!result.ok) {
+        failure = result.failure;
+      } else {
+        const saved = result.data.task as Task;
+        confirmedRows.set(id, saved);
+        markSaved(id);
+        if (isLastQueuedWrite(id)) replaceRow(id, saved);
+      }
+    } catch (error) {
+      console.error('Write failed:', error);
+      failure = { status: 0, body: error instanceof Error ? error.message : 'Write failed' };
+    }
+    if (isLastQueuedWrite(id)) {
+      const confirmed = confirmedRows.get(id);
+      if (failure && confirmed) replaceRow(id, confirmed);
+      confirmedRows.delete(id);
+    }
+    return failure;
+  });
+}
+
+function markSaved(id: string) {
+  usePlannerStore.setState((state) => ({ savedAt: { ...state.savedAt, [id]: Date.now() } }));
+}
+
 export const usePlannerStore = create<PlannerStore>((set, get) => ({
   tasks: [],
-  currentView: 'board',
   selectedTask: null,
   isModalOpen: false,
-  selectedTaskIds: new Set<string>(),
+  detailTaskId: null,
+  editing: null,
+  heldUpdates: {},
+  focusedTaskId: null,
+  visibleTaskIds: [],
   isFetching: false,
   lastFetchedAt: null,
+  syncError: false,
+  savedAt: {},
   setTasks: (tasks) => set({ tasks }),
+  setCacheOwner: (uid) => {
+    cacheOwner = uid;
+  },
+  loadCachedTasks: (uid) => {
+    if (get().tasks.length > 0) return;
+    const cached = readJson<Task[]>(taskCacheKey(uid));
+    if (!Array.isArray(cached) || cached.length === 0) return;
+    // No write is running after a reload, so a saved "pending" flag would make
+    // the row ignore every refresh from then on.
+    set({ tasks: cached.map(({ pendingSync: _stale, ...row }) => row) });
+  },
   fetchTasks: async (opts = {}) => {
-    const { force = false } = opts;
+    const { force = false, background = false } = opts;
     const state = get();
     const now = Date.now();
     if (!force && state.lastFetchedAt && now - state.lastFetchedAt < FETCH_DEDUPE_MS) {
@@ -171,6 +355,7 @@ export const usePlannerStore = create<PlannerStore>((set, get) => ({
       return inFlightFetch;
     }
     set({ isFetching: true });
+    const requestedAt = Date.now();
     inFlightFetch = (async () => {
       try {
         const headers = await getAuthHeaders();
@@ -180,13 +365,28 @@ export const usePlannerStore = create<PlannerStore>((set, get) => ({
           throw new Error(text);
         }
         const data = await res.json();
-        const tasks = Array.isArray(data.tasks) ? data.tasks : [];
-        console.log(`✅ Loaded ${tasks.length} task(s) from Notion via API`);
-        set({ tasks, lastFetchedAt: Date.now() });
+        const incoming: Task[] = Array.isArray(data.tasks) ? data.tasks : [];
+        const current = get();
+        const cutoff = requestedAt - STALE_READ_GRACE_MS;
+        const savedAt = Object.fromEntries(Object.entries(current.savedAt).filter(([, at]) => at >= cutoff));
+        const { tasks, held } = mergeIncoming(current.tasks, incoming, {
+          busyIds: new Set(writeQueues.keys()),
+          settledIds: new Set(Object.keys(savedAt)),
+          editingId: current.editing?.taskId ?? null,
+          openId: current.detailTaskId,
+        });
+        set({ tasks, heldUpdates: held, savedAt, lastFetchedAt: Date.now(), syncError: false });
+        if (cacheOwner) {
+          // Only what Notion answered, never unconfirmed edits. Archived rows
+          // never display, and they are most of the database.
+          writeStorage(taskCacheKey(cacheOwner), JSON.stringify(incoming.filter((t) => !isArchived(t))));
+        }
       } catch (e) {
         console.error('❌ Failed to load tasks from API:', e);
-        toast.error('Could not load tasks from Notion.');
-        // Leave existing tasks in place on error.
+        set({ syncError: true });
+        // A refresh that fails every 45 seconds should not toast every time;
+        // the header shows the stale state instead.
+        if (!background) toast.error('Could not load tasks from Notion.');
       } finally {
         set({ isFetching: false });
         inFlightFetch = null;
@@ -200,16 +400,16 @@ export const usePlannerStore = create<PlannerStore>((set, get) => ({
   updateTask: (id, updates) => {
     const enhancedUpdates: Partial<Task> = { ...updates };
     if ('dueDate' in updates) {
-      const { value, error } = normalizeDate(updates.dueDate ?? undefined);
+      const { value, error } = normalizeDate(updates.dueDate);
       if (error) {
         toast.error(`Invalid date: ${error}`);
         return;
       }
       enhancedUpdates.dueDate = value ?? null;
-      enhancedUpdates.daysUntilDue = calculateDaysUntilDue(value);
+      enhancedUpdates.daysUntilDue = daysUntilDueInUserTz(value);
     }
     if ('plannedDay' in updates) {
-      const { value, error } = normalizeDate(updates.plannedDay ?? undefined);
+      const { value, error } = normalizeDate(updates.plannedDay);
       if (error) {
         toast.error(`Invalid date: ${error}`);
         return;
@@ -229,68 +429,45 @@ export const usePlannerStore = create<PlannerStore>((set, get) => ({
     });
   },
   submitTask: async (id) => {
-    const state = get();
-    const task = state.tasks.find((t) => t.id === id);
+    // Only drafts are submitted whole. Existing rows save field by field, so a
+    // save can't overwrite what the planner bot wrote since the page loaded.
+    if (!id.startsWith('temp-')) return;
+    const task = get().tasks.find((t) => t.id === id);
     if (!task) return;
 
     setPendingSync(id, true);
-
     try {
-      if (id.startsWith('temp-')) {
-        const headers = await getAuthHeaders();
-        const result = await attemptFetch('/api/tasks', {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({
-            title: task.title,
-            dueDate: task.dueDate,
-            plannedDay: task.plannedDay,
-            status: task.status,
-            stage: task.stage,
-            priority: task.priority,
-            project: task.project,
-            bucket: task.bucket,
-            weekday: task.weekday,
-            todoItems: task.todoItems || [],
-            comments: task.comments || [],
-            nextAction: task.nextAction,
-            sourceText: task.sourceText,
-            waitingOn: task.waitingOn,
-            important: task.important ?? false,
-            urgent: task.urgent ?? false,
-          }),
-        });
-        if (!result.ok) {
-          showSaveError(task.title, () => get().submitTask(id), result.failure.status);
-          setPendingSync(id, false);
-          return;
-        }
-        const created: Task = result.data.task;
-        set({
-          tasks: get().tasks.map((t) => (t.id === id ? { ...created, pendingSync: undefined } : t)),
-          selectedTask:
-            get().selectedTask?.id === id ? { ...created, pendingSync: undefined } : get().selectedTask,
-        });
-      } else {
-        const { id: _omit, pendingSync: _ps, ...payload } = task as any;
-        const headers = await getAuthHeaders();
-        const result = await attemptFetch(`/api/tasks/${id}`, {
-          method: 'PUT',
-          headers,
-          body: JSON.stringify(payload),
-        });
-        if (!result.ok) {
-          showSaveError(task.title, () => get().submitTask(id), result.failure.status);
-          setPendingSync(id, false);
-          return;
-        }
-        const updated: Task = result.data.task;
-        set({
-          tasks: get().tasks.map((t) => (t.id === id ? { ...updated, pendingSync: undefined } : t)),
-          selectedTask:
-            get().selectedTask?.id === id ? { ...updated, pendingSync: undefined } : get().selectedTask,
-        });
+      const headers = await getAuthHeaders();
+      const result = await attemptFetch('/api/tasks', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          title: task.title,
+          dueDate: task.dueDate,
+          plannedDay: task.plannedDay,
+          status: task.status,
+          stage: task.stage,
+          priority: task.priority,
+          project: task.project,
+          bucket: task.bucket,
+          weekday: task.weekday,
+          todoItems: task.todoItems || [],
+          comments: task.comments || [],
+          nextAction: task.nextAction,
+          sourceText: task.sourceText,
+          waitingOn: task.waitingOn,
+          important: task.important ?? false,
+          urgent: task.urgent ?? false,
+        }),
+      }, retryOnlyIfRefused, false);
+      if (!result.ok) {
+        showSaveError(task.title, () => get().submitTask(id), result.failure.status);
+        setPendingSync(id, false);
+        return;
       }
+      const created = result.data.task as Task;
+      replaceRow(id, created);
+      markSaved(created.id);
     } catch (e) {
       console.error('Failed to submit task:', e);
       toast.error(`Couldn't save '${task.title}'. Retry?`, {
@@ -300,122 +477,147 @@ export const usePlannerStore = create<PlannerStore>((set, get) => ({
       setPendingSync(id, false);
     }
   },
-  submitPartial: async (id, updates) => {
-    if (id.startsWith('temp-')) return;
+  addQuickTask: async (title) => {
+    const id = `temp-${Date.now()}`;
+    get().addTask({
+      id,
+      title,
+      dateCreated: new Date().toISOString(),
+      status: 'To Do',
+      stage: 'Inbox',
+      weekday: 'No Weekdays',
+      todoItems: [],
+    });
+    await get().submitTask(id);
+  },
+  saveChange: async (id, patch) => {
     const task = get().tasks.find((t) => t.id === id);
-    setPendingSync(id, true);
-    try {
-      const headers = await getAuthHeaders();
-      const result = await attemptFetch(`/api/tasks/${id}`, {
-        method: 'PUT',
-        headers,
-        body: JSON.stringify(updates),
-      });
-      if (!result.ok) {
-        showSaveError(task?.title ?? 'task', () => get().submitPartial(id, updates), result.failure.status);
-        setPendingSync(id, false);
-        return;
+    if (!task) return false;
+    const normalized: Partial<Task> = { ...patch };
+    for (const key of ['dueDate', 'plannedDay'] as const) {
+      if (!(key in patch)) continue;
+      const { value, error } = normalizeDate(patch[key]);
+      if (error) {
+        toast.error(`Invalid date: ${error}`);
+        return false;
       }
-      const updated: Task = result.data.task;
-      set((state) => ({
-        tasks: state.tasks.map((t) => (t.id === id ? { ...updated, pendingSync: undefined } : t)),
-        selectedTask: state.selectedTask?.id === id ? { ...updated, pendingSync: undefined } : state.selectedTask,
-      }));
-    } catch (e) {
-      console.error('Partial submit error:', e);
-      toast.error(`Couldn't save '${task?.title ?? 'task'}'. Retry?`, {
-        label: 'Retry',
-        onClick: () => get().submitPartial(id, updates),
-      });
-      setPendingSync(id, false);
+      normalized[key] = value ?? null;
     }
-  },
-  deleteTask: async (id) => {
-    const prev = get().tasks;
-    set((state) => ({ tasks: state.tasks.filter((task) => task.id !== id) }));
 
-    if (!id.startsWith('temp-')) {
-      try {
-        const headers = await getAuthHeaders();
-        const res = await fetch(`/api/tasks/${id}`, { method: 'DELETE', headers });
-        if (!res.ok) {
-          console.error('Failed to delete task on server:', await res.text());
-          toast.error('Failed to delete task on server.');
-          set({ tasks: prev });
-        }
-      } catch (e) {
-        console.error('Failed to delete task on server:', e);
-        toast.error('Failed to delete task on server.');
-        set({ tasks: prev });
-      }
+    get().updateTask(id, normalized);
+    if (id.startsWith('temp-')) return true;
+
+    const failure = await sendWrite(id, `/api/tasks/${id}`, 'PUT', normalized, task);
+    if (!failure) return true;
+    showSaveError(task.title, () => void get().saveChange(id, patch), failure.status);
+    return false;
+  },
+  completeTask: async (id) => {
+    const task = get().tasks.find((t) => t.id === id);
+    if (!task || id.startsWith('temp-') || isDone(task) || isArchived(task)) return;
+
+    const prior: PriorState = { stage: task.stage ?? null, status: task.status };
+    writeStorage(priorStateKey(id), JSON.stringify(prior));
+    useToastStore.getState().push({
+      message: `Completed '${task.title}'`,
+      variant: 'success',
+      durationMs: UNDO_WINDOW_MS,
+      action: {
+        label: 'Undo',
+        onClick: async () => {
+          writeStorage(priorStateKey(id), null);
+          await get().saveChange(id, { stage: prior.stage, status: prior.status });
+        },
+      },
+    });
+    const saved = await get().saveChange(id, { ...COMPLETE_PATCH });
+    if (!saved) writeStorage(priorStateKey(id), null);
+  },
+  reopenTask: async (id) => {
+    const task = get().tasks.find((t) => t.id === id);
+    if (!task || !isDone(task)) return;
+    const { today, tomorrow } = dayPair();
+    const prior = readJson<PriorState>(priorStateKey(id));
+    const saved = await get().saveChange(id, reopenPatch(task, prior, today, tomorrow));
+    if (saved) writeStorage(priorStateKey(id), null);
+  },
+  archiveTask: async (id) => {
+    const task = get().tasks.find((t) => t.id === id);
+    if (!task || !isDone(task)) return;
+    const saved = await get().saveChange(id, { status: 'Archived' });
+    if (saved) {
+      writeStorage(priorStateKey(id), null);
+      toast.info(`Archived '${task.title}'`);
     }
   },
-  setCurrentView: (view) => set({ currentView: view }),
+  moveTask: async (id, target) => {
+    const task = get().tasks.find((t) => t.id === id);
+    if (!task) return;
+    const { today, tomorrow } = dayPair();
+    await get().saveChange(id, patchForMove(task, target, today, tomorrow));
+  },
+  changeSteps: async (id, op) => {
+    const task = get().tasks.find((t) => t.id === id);
+    if (!task) return;
+    let next: string;
+    try {
+      next = applyStepOp(task.todosText ?? '', op);
+    } catch (error) {
+      if (!(error instanceof StepConflictError)) throw error;
+      toast.error(error.message);
+      return;
+    }
+    get().updateTask(id, { todosText: next });
+    const failure = await sendWrite(id, `/api/tasks/${id}/steps`, 'POST', op, task, false);
+    if (!failure) return;
+    if (failure.status === 409) {
+      toast.error('That step changed in Notion. Showing the latest version.');
+      void get().fetchTasks({ force: true, background: true });
+      return;
+    }
+    // It may have saved with only the answer lost, so a Retry button could add
+    // the step twice. Show what Notion really has instead.
+    if (failure.status === 0 || failure.status >= 500) {
+      toast.error("Couldn't confirm that change. Showing the latest from Notion.");
+      void get().fetchTasks({ force: true, background: true });
+      return;
+    }
+    showSaveError(task.title, () => void get().changeSteps(id, op), failure.status);
+  },
+  discardDraft: (id) => {
+    if (!id.startsWith('temp-')) return;
+    set((state) => ({ tasks: state.tasks.filter((task) => task.id !== id) }));
+  },
   setSelectedTask: (task) => set({ selectedTask: task }),
   setIsModalOpen: (isOpen) => set({ isModalOpen: isOpen }),
-  toggleSelection: (id) =>
-    set((state) => {
-      const next = new Set(state.selectedTaskIds);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return { selectedTaskIds: next };
-    }),
-  clearSelection: () => set({ selectedTaskIds: new Set<string>() }),
-  bulkUpdate: async (updates, opts = {}) => {
-    const concurrency = Math.max(1, opts.concurrency ?? 3);
-    let ok = 0;
-    let failed = 0;
-    let i = 0;
-
-    // Mark all targeted tasks pending up-front for visual feedback.
-    set((state) => ({
-      tasks: state.tasks.map((t) =>
-        updates.some((u) => u.id === t.id) ? { ...t, pendingSync: true } : t
-      ),
-    }));
-
-    const runOne = async (u: { id: string; patch: Partial<Task> }) => {
-      try {
-        const headers = await getAuthHeaders();
-        const result = await attemptFetch(`/api/tasks/${u.id}`, {
-          method: 'PUT',
-          headers,
-          body: JSON.stringify(u.patch),
-        });
-        if (!result.ok) {
-          failed++;
-          setPendingSync(u.id, false);
-          return;
-        }
-        const updated: Task = result.data.task;
-        ok++;
-        set((state) => ({
-          tasks: state.tasks.map((t) =>
-            t.id === u.id ? { ...updated, pendingSync: undefined } : t
-          ),
-          selectedTask:
-            state.selectedTask?.id === u.id
-              ? { ...updated, pendingSync: undefined }
-              : state.selectedTask,
-        }));
-      } catch {
-        failed++;
-        setPendingSync(u.id, false);
-      }
-    };
-
-    const workers: Promise<void>[] = [];
-    for (let w = 0; w < concurrency; w++) {
-      workers.push(
-        (async () => {
-          while (i < updates.length) {
-            const idx = i++;
-            await runOne(updates[idx]);
-          }
-        })()
-      );
-    }
-    await Promise.all(workers);
-    return { ok, failed };
+  // history instead of the Next router: a navigation would re-render the view
+  // underneath and lose its scroll position, filters and tab.
+  openDetail: (id) => {
+    set({ detailTaskId: id, focusedTaskId: id });
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    url.searchParams.set('task', id);
+    window.history.pushState({}, '', url);
   },
+  closeDetail: () => {
+    set({ detailTaskId: null, editing: null });
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    url.searchParams.delete('task');
+    window.history.pushState({}, '', url);
+  },
+  setDetailFromUrl: () => {
+    if (typeof window === 'undefined') return;
+    set({ detailTaskId: new URLSearchParams(window.location.search).get('task') });
+  },
+  setEditing: (editing) => set({ editing }),
+  applyHeldUpdate: (id) => {
+    const held = get().heldUpdates[id];
+    if (!held) return;
+    const { [id]: _applied, ...rest } = get().heldUpdates;
+    set({ heldUpdates: rest, editing: null });
+    replaceRow(id, held);
+  },
+  setFocusedTask: (id) => set({ focusedTaskId: id }),
+  setVisibleTaskIds: (ids) => set({ visibleTaskIds: ids }),
 }));

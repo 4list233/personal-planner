@@ -3,14 +3,11 @@ import type { Task } from './types';
 import {
   BOARD_COLUMNS,
   PLANNER_OWNER_EMAIL,
-  checklistFromSources,
   columnForTask,
   compareBoardTasks,
-  effectiveView,
   formatTodosText,
   isStale,
   parseTodosText,
-  patchForColumn,
   rowVisibleToUser,
   stageFromStatus,
   statusForStage,
@@ -53,10 +50,12 @@ describe('columnForTask', () => {
     expect(columnForTask({ stage: 'In Progress', status: 'To Do' })).toBe('In Progress');
   });
 
-  it('hides Done and Archived and keeps everything else visible', () => {
-    expect(columnForTask({ status: 'Done' })).toBeNull();
+  it('shows Done, hides Archived, and keeps everything else visible', () => {
+    expect(columnForTask({ status: 'Done' })).toBe('Done');
+    expect(columnForTask({ stage: 'Done', status: 'To Do' })).toBe('Done');
     expect(columnForTask({ status: 'Archived' })).toBeNull();
-    expect(columnForTask({ stage: 'Done', status: 'To Do' })).toBeNull();
+    expect(columnForTask({ stage: 'Done', status: 'Archived' })).toBeNull();
+    expect(columnForTask({ stage: 'Waiting', status: 'Archived' })).toBeNull();
     expect(columnForTask({ status: 'Blocked' })).toBe('Waiting');
     expect(columnForTask({ status: 'Reminders' })).toBe('Waiting');
     expect(columnForTask({ status: 'Long Term Deadlines' })).toBe('Inbox');
@@ -65,7 +64,7 @@ describe('columnForTask', () => {
     expect(columnForTask({})).toBe('Unsorted');
   });
 
-  it('lists every board column, including Unsorted, and not Done', () => {
+  it('lists every board column, including Unsorted and Done', () => {
     expect(BOARD_COLUMNS).toEqual([
       'Inbox',
       'This Week',
@@ -73,11 +72,12 @@ describe('columnForTask', () => {
       'In Progress',
       'Waiting',
       'Unsorted',
+      'Done',
     ]);
   });
 });
 
-describe('statusForStage / patchForColumn', () => {
+describe('statusForStage', () => {
   it('keeps the old Status field in sync when a card moves', () => {
     expect(statusForStage('Inbox')).toBe('To Do');
     expect(statusForStage('This Week')).toBe('Doing Tomorrow');
@@ -85,8 +85,6 @@ describe('statusForStage / patchForColumn', () => {
     expect(statusForStage('Waiting')).toBe('Blocked');
     expect(statusForStage('In Progress')).toBe('Doing Today');
     expect(statusForStage('Done')).toBe('Done');
-    expect(patchForColumn('Today')).toEqual({ stage: 'Today', status: 'Doing Today' });
-    expect(patchForColumn('Unsorted')).toBeNull();
   });
 });
 
@@ -162,23 +160,20 @@ describe('todo text', () => {
     ]);
   });
 
-  it('writes both the dash marker and a br separator', () => {
+  it('writes new rows in the checkbox format and reads them back', () => {
     const text = formatTodosText([
       { id: 'a', text: 'open', completed: false },
       { id: 'b', text: 'done', completed: true },
     ]);
-    expect(text).toBe('- open<br />✓ done');
+    expect(text).toBe('- [ ] open\n- [x] done');
     expect(parseTodosText(text).map((item) => ({ text: item.text, completed: item.completed }))).toEqual([
       { text: 'open', completed: false },
       { text: 'done', completed: true },
     ]);
   });
 
-  it('prefers page to-do blocks and falls back to the property', () => {
-    const propertyItems = [{ id: 'p', text: 'from property', completed: false }];
-    const blockItems = [{ id: 'b', text: 'from block', completed: true }];
-    expect(checklistFromSources(blockItems, propertyItems)).toEqual(blockItems);
-    expect(checklistFromSources([], propertyItems)).toEqual(propertyItems);
+  it('does not count milestone headings as to-dos', () => {
+    expect(parseTodosText('## Setup\n- [ ] one').map((item) => item.text)).toEqual(['one']);
   });
 });
 
@@ -268,20 +263,5 @@ describe('taskFromNotionPage', () => {
     });
     expect(task.status).toBe('To Do');
     expect(columnForTask(task)).toBe('Inbox');
-  });
-});
-
-describe('effectiveView', () => {
-  it('hides weekday and matrix views unless the flag is on', () => {
-    const previous = process.env.NEXT_PUBLIC_SHOW_LEGACY_VIEWS;
-    delete process.env.NEXT_PUBLIC_SHOW_LEGACY_VIEWS;
-    expect(effectiveView('matrix')).toBe('board');
-    expect(effectiveView('weekdays')).toBe('board');
-    expect(effectiveView('calendar')).toBe('calendar');
-    process.env.NEXT_PUBLIC_SHOW_LEGACY_VIEWS = '1';
-    expect(effectiveView('matrix')).toBe('matrix');
-    expect(effectiveView('weekdays')).toBe('weekdays');
-    if (previous === undefined) delete process.env.NEXT_PUBLIC_SHOW_LEGACY_VIEWS;
-    else process.env.NEXT_PUBLIC_SHOW_LEGACY_VIEWS = previous;
   });
 });

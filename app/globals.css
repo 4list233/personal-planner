@@ -8,7 +8,20 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
+  --font-sans: var(--font-inter);
+  --font-display: var(--font-space-grotesk);
+  --color-ground: #f3f4f1;
+  --color-lane: #ebede8;
+  --color-lane-over: #e3e6df;
+  --color-chip: #e7e9e4;
+  --color-line: #dfe2dc;
+  --color-line-strong: #bfc4bb;
+  --color-ink: #1a1e1b;
+  --color-muted: #5b635d;
+  --color-accent: #17663f;
+  --color-accent-soft: #e3f1e8;
+  --color-accent-strong: #cfe8d8;
+  --color-late: #a8430a;
   --font-mono: var(--font-geist-mono);
 }
 
@@ -22,47 +35,9 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-inter), system-ui, sans-serif;
   overflow-x: hidden;
 }
 
-html {
-  overflow-x: hidden;
-}
-
-/* FullCalendar custom styles */
-.fc {
-  font-family: inherit;
-}
-
-.fc-toolbar-title {
-  font-size: 1.25rem !important;
-  font-weight: 600 !important;
-}
-
-.fc-button {
-  background-color: #f3f4f6 !important;
-  border: 1px solid #e5e7eb !important;
-  color: #374151 !important;
-  text-transform: capitalize !important;
-  font-weight: 500 !important;
-}
-
-.fc-button:hover {
-  background-color: #e5e7eb !important;
-}
-
-.fc-button-active {
-  background-color: #3b82f6 !important;
-  border-color: #3b82f6 !important;
-  color: white !important;
-}
-
-.fc-daygrid-day-number {
-  padding: 0.5rem !important;
-}
-
-.fc-event {
-  cursor: pointer;
-  border-radius: 4px;
-}
+/* Hiding overflow on html as well would make body the scroller and stop the
+   task panel from sticking. */

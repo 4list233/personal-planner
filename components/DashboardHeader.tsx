@@ -1,72 +1,75 @@
 'use client';
 
+import { useMemo, useState } from 'react';
 import { usePlannerStore } from '@/lib/store';
-import ViewSwitcher from './ViewSwitcher';
-import { effectiveView } from '@/lib/planner';
-import { Filter, Search, Plus } from 'lucide-react';
+import { todayInUserTz } from '@/lib/time';
+import { isOverdue } from '@/lib/views';
+import ImageTaskImport from './ImageTaskImport';
+
+function headerDate(day: string): string {
+  const [year, month, date] = day.split('-').map(Number);
+  return new Date(Date.UTC(year, month - 1, date, 12)).toLocaleDateString('en-US', {
+    weekday: 'long',
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'UTC',
+  });
+}
 
 export default function DashboardHeader() {
-  const { currentView, setCurrentView, addTask, setSelectedTask, setIsModalOpen } = usePlannerStore();
-  const view = effectiveView(currentView);
+  const syncError = usePlannerStore((state) => state.syncError);
+  const addQuickTask = usePlannerStore((state) => state.addQuickTask);
+  const tasks = usePlannerStore((state) => state.tasks);
+  const lastFetchedAt = usePlannerStore((state) => state.lastFetchedAt);
+  const [draft, setDraft] = useState('');
+  const [importing, setImporting] = useState(false);
 
-  const handleNewTask = async () => {
-    // Always create a local draft first; no server call until user submits
-    const tempTask = {
-      id: `temp-${Date.now()}`,
-      title: 'New Task',
-      dueDate: new Date().toISOString().split('T')[0],
-      dateCreated: new Date().toISOString(),
-      status: 'To Do' as const,
-      stage: 'Inbox' as const,
-      weekday: 'No Weekdays' as const,
-      daysUntilDue: 0,
-      todoItems: [],
-    } as const;
-    addTask(tempTask as any);
-    setSelectedTask(tempTask as any);
-    setIsModalOpen(true);
+  const today = useMemo(() => todayInUserTz(), [lastFetchedAt]); // eslint-disable-line react-hooks/exhaustive-deps
+  const overdue = useMemo(() => tasks.filter((task) => isOverdue(task, today)).length, [tasks, today]);
+
+  const submit = (event: React.FormEvent) => {
+    event.preventDefault();
+    const title = draft.trim();
+    if (!title) return;
+    setDraft('');
+    void addQuickTask(title);
   };
 
   return (
-    <div className="border-b border-gray-200 bg-white">
-      <div className="px-4 py-4 max-w-full">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 gap-3">
-          <div>
-            <h1 className="text-xl sm:text-2xl font-semibold text-gray-900 flex items-center gap-2">
-              Scrappy Tool 2.0
-            </h1>
-            <p className="text-sm text-gray-500 mt-1">Forest's Personal Planner 😁</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <button 
-              onClick={handleNewTask}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm"
-            >
-              <Plus size={16} />
-              Add Task
+    <header className="px-4 md:px-6 pt-5 pb-3">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <h1 className="font-display text-[22px] font-semibold tracking-tight">Planner</h1>
+        <span className="text-sm text-muted">{headerDate(today)}</span>
+        {overdue > 0 ? <span className="text-sm font-semibold text-late">{overdue} overdue</span> : null}
+        {syncError ? (
+          <span role="status" className="text-sm text-late">
+            Couldn’t reach Notion. Showing the last saved list.
+          </span>
+        ) : null}
+        <div className="flex gap-2 w-full md:w-auto md:ml-auto md:flex-[0_1_460px]">
+          <form onSubmit={submit} className="flex flex-1 min-w-0 gap-2">
+            <input
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              aria-label="New task"
+              placeholder="Add a task to Inbox"
+              className="flex-1 min-w-0 h-11 px-3 border border-line-strong rounded-lg bg-white text-sm text-ink placeholder:text-muted focus:outline-2 focus:-outline-offset-1 focus:outline-accent"
+            />
+            <button type="submit" className="h-11 px-4 rounded-lg bg-accent text-white text-sm font-semibold cursor-pointer">
+              Add
             </button>
-          </div>
-        </div>
-
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-          <ViewSwitcher currentView={view} onViewChange={setCurrentView} />
-          
-          <div className="flex items-center gap-2 flex-wrap">
-            {process.env.NEXT_PUBLIC_ENABLE_SEARCH === '1' && (
-              <>
-                <button className="flex items-center gap-2 px-3 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors">
-                  <Search size={16} />
-                  <span className="hidden sm:inline">Search</span>
-                </button>
-                <button className="flex items-center gap-2 px-3 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors">
-                  <Filter size={16} />
-                  <span className="hidden sm:inline">Filter</span>
-                </button>
-              </>
-            )}
-          </div>
+          </form>
+          <button
+            type="button"
+            aria-expanded={importing}
+            onClick={() => setImporting(!importing)}
+            className="h-11 px-3 rounded-lg border border-line-strong bg-white text-sm cursor-pointer hover:bg-chip"
+          >
+            Import
+          </button>
         </div>
       </div>
-    </div>
+      {importing ? <ImageTaskImport /> : null}
+    </header>
   );
 }

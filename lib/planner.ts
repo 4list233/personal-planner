@@ -1,3 +1,4 @@
+import { parseSteps } from './steps';
 import { daysUntilDueInUserTz } from './time';
 import type {
   Bucket,
@@ -7,7 +8,6 @@ import type {
   Task,
   TaskStatus,
   TodoItem,
-  ViewType,
   Weekday,
 } from './types';
 
@@ -21,6 +21,7 @@ export const BOARD_COLUMNS = [
   'In Progress',
   'Waiting',
   'Unsorted',
+  'Done',
 ] as const;
 
 export type BoardColumn = (typeof BOARD_COLUMNS)[number];
@@ -99,21 +100,16 @@ export function columnForTask(task: {
   stage?: string | null;
   status?: string | null;
 }): BoardColumn | null {
+  // Checked first: archived rows can still carry a Stage such as Waiting.
+  if (task.status === 'Archived') return null;
   const stage = typeof task.stage === 'string' ? task.stage.trim() : '';
-  if (stage === 'Done') return null;
+  if (stage === 'Done') return 'Done';
   if (stage && BOARD_STAGE_SET.has(stage)) return stage as BoardColumn;
   if (stage) return 'Unsorted';
 
   const derived = stageFromStatus(task.status);
   if (!derived) return 'Unsorted';
-  if (derived === 'Done') return null;
   return derived;
-}
-
-export function patchForColumn(column: BoardColumn): Partial<Task> | null {
-  if (column === 'Unsorted') return null;
-  const stage = column as Stage;
-  return { stage, status: statusForStage(stage) };
 }
 
 function dateKey(value?: string | null): string | null {
@@ -157,25 +153,14 @@ export function splitRichLines(raw: string): string[] {
 }
 
 export function parseTodosText(raw: string, idPrefix = 'todo'): TodoItem[] {
-  if (!raw || !raw.trim()) return [];
-  return splitRichLines(raw)
-    .map((line, index) => {
-      const completed = /^(?:✓|\[x\])/i.test(line);
-      let text = line.replace(/^\\-\s+/, '');
-      text = text.replace(/^(?:✓|\[x\]|\[ \])\s*/i, '');
-      text = text.replace(/^[-*•]\s+/, '');
-      return { id: `${idPrefix}-${index}`, text: text.trim(), completed };
-    })
-    .filter((item) => item.text.length > 0);
+  return parseSteps(raw || '')
+    .filter((line) => line.kind === 'step')
+    .map((line, index) => ({ id: `${idPrefix}-${index}`, text: line.body, completed: line.completed }));
 }
 
+/** Only for brand-new rows. Existing Todos are edited line by line in steps.ts. */
 export function formatTodosText(items: TodoItem[]): string {
-  return items.map((item) => `${item.completed ? '✓' : '-'} ${item.text}`).join('<br />');
-}
-
-/** Page to-do blocks win. An empty block list falls back to the Todos property. */
-export function checklistFromSources(blockItems: TodoItem[], propertyItems: TodoItem[]): TodoItem[] {
-  return blockItems.length > 0 ? blockItems : propertyItems;
+  return items.map((item) => `- [${item.completed ? 'x' : ' '}] ${item.text}`).join('\n');
 }
 
 export function userEmailQueryFilter(userEmail?: string) {
@@ -202,15 +187,6 @@ export function rowVisibleToUser(rowEmail?: string | null, userEmail?: string): 
   const row = (rowEmail || '').trim().toLowerCase();
   if (!row) return isPlannerOwner(userEmail);
   return row === userEmail.trim().toLowerCase();
-}
-
-export function showLegacyPlannerViews(): boolean {
-  return process.env.NEXT_PUBLIC_SHOW_LEGACY_VIEWS === '1';
-}
-
-export function effectiveView(view: ViewType): ViewType {
-  if (!showLegacyPlannerViews() && (view === 'weekdays' || view === 'matrix')) return 'board';
-  return view;
 }
 
 export interface NotionPageLike {
@@ -278,7 +254,9 @@ export function taskFromNotionPage(page: NotionPageLike): Task {
     weekday: knownWeekday(selectName(props.Weekdays || props.Weekday)),
     daysUntilDue: daysUntilDueInUserTz(dueDate),
     todoItems: parseTodosText(todoText, `${page.id}-todo`),
+    todosText: todoText,
     comments: splitRichLines(commentText),
+    commentsText: commentText,
     nextAction: richTextPlain(props['Next Action']) || undefined,
     sourceText: richTextPlain(props.Source) || undefined,
     waitingOn: richTextPlain(props['Waiting On']) || undefined,
