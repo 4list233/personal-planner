@@ -1,21 +1,19 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ExternalLink, X } from 'lucide-react';
 import { getAuthHeaders, usePlannerStore } from '@/lib/store';
-import { statusForStage } from '@/lib/planner';
 import { formatDaysUntilDue } from '@/lib/formatters';
-import type { Bucket, Priority, ProjectName, Stage, Task, TaskStatus } from '@/lib/types';
-import { isArchived, isFinished } from '@/lib/views';
+import type { Priority, Task } from '@/lib/types';
+import { isFinished, peopleIn } from '@/lib/views';
 import InlineText from './InlineText';
 import StepChecklist from './StepChecklist';
 
-const STAGES: Stage[] = ['Inbox', 'This Week', 'Today', 'In Progress', 'Waiting', 'Done'];
-// Done and Archived are left out: those only happen through their own buttons.
-const STATUSES: TaskStatus[] = ['To Do', 'Doing Today', 'Doing Tomorrow', 'Blocked', 'Reminders', 'Long Term Deadlines'];
+// The panel shows only what Forest plans with. Stage, Status, Bucket, Waiting On,
+// Urgent, Important, Project, Source and Next Action stay in Notion untouched;
+// the board and the daily rollup still set Stage and Status themselves.
 const PRIORITIES: Priority[] = ['P1', 'P2', 'P3'];
-const BUCKETS: Bucket[] = ['Mine', 'Dispatch', 'Follow-up', 'Watch', 'Long-term'];
-const PROJECTS: ProjectName[] = ['Velox', 'School', 'Personal', 'Leads', 'Other'];
+const PEOPLE_LIST_ID = 'planner-people';
 
 const inputClass =
   'w-full h-11 px-2.5 border border-line-strong rounded-lg text-sm text-ink bg-white focus:outline-2 focus:-outline-offset-1 focus:outline-accent';
@@ -32,40 +30,6 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       <div className="text-xs text-muted mb-1">{label}</div>
       {children}
     </div>
-  );
-}
-
-function Select<T extends string>({
-  label,
-  value,
-  options,
-  onChange,
-  allowNone = true,
-}: {
-  label: string;
-  value?: T | null;
-  options: T[];
-  onChange: (value: T | null) => void;
-  allowNone?: boolean;
-}) {
-  // A value the site doesn't offer (Done, or a new Notion option) must still display.
-  const shown = value && !options.includes(value) ? [value, ...options] : options;
-  return (
-    <Field label={label}>
-      <select
-        aria-label={label}
-        value={value ?? ''}
-        onChange={(event) => onChange((event.target.value || null) as T | null)}
-        className={inputClass}
-      >
-        {allowNone ? <option value="">None</option> : null}
-        {shown.map((option) => (
-          <option key={option} value={option}>
-            {option}
-          </option>
-        ))}
-      </select>
-    </Field>
   );
 }
 
@@ -90,21 +54,6 @@ function DateField({
         className={inputClass}
       />
     </Field>
-  );
-}
-
-function Toggle({ label, on, onChange }: { label: string; on: boolean; onChange: (on: boolean) => void }) {
-  return (
-    <button
-      type="button"
-      aria-pressed={on}
-      onClick={() => onChange(!on)}
-      className={`w-full h-11 rounded-lg border text-sm cursor-pointer ${
-        on ? 'bg-ink text-white border-ink font-semibold' : 'bg-white text-ink border-line-strong hover:bg-chip'
-      }`}
-    >
-      {label}
-    </button>
   );
 }
 
@@ -133,6 +82,64 @@ function PriorityPicker({ value, onChange }: { value?: Priority | null; onChange
   );
 }
 
+function PeopleField({ people, onChange }: { people: string[]; onChange: (people: string[]) => void }) {
+  const tasks = usePlannerStore((state) => state.tasks);
+  const known = useMemo(() => peopleIn(tasks).map((entry) => entry.name), [tasks]);
+  const [draft, setDraft] = useState('');
+
+  const add = () => {
+    // Notion option names can't hold a comma, so a comma separates names here.
+    const names = draft.split(',').map((name) => name.trim()).filter(Boolean);
+    setDraft('');
+    const next = [...new Set([...people, ...names])];
+    if (next.length !== people.length) onChange(next);
+  };
+
+  return (
+    <Field label="People">
+      <div className="flex flex-wrap items-center gap-1.5 min-h-11 px-1.5 py-1 border border-line-strong rounded-lg bg-white focus-within:outline-2 focus-within:-outline-offset-1 focus-within:outline-accent">
+        {people.map((name) => (
+          <span key={name} className="flex items-center gap-1 h-8 pl-2.5 pr-1 rounded-md bg-chip text-sm">
+            {name}
+            <button
+              type="button"
+              aria-label={`Remove ${name}`}
+              onClick={() => onChange(people.filter((other) => other !== name))}
+              className="w-7 h-7 flex items-center justify-center rounded text-muted hover:text-late cursor-pointer"
+            >
+              <X size={14} />
+            </button>
+          </span>
+        ))}
+        <input
+          value={draft}
+          list={PEOPLE_LIST_ID}
+          aria-label="Add a person"
+          placeholder={people.length ? '' : 'Who is this for or with?'}
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ',') {
+              event.preventDefault();
+              add();
+            } else if (event.key === 'Backspace' && !draft && people.length) {
+              onChange(people.slice(0, -1));
+            }
+          }}
+          onBlur={add}
+          className="flex-1 min-w-[120px] h-8 px-1.5 text-sm bg-transparent placeholder:text-muted focus:outline-none"
+        />
+        <datalist id={PEOPLE_LIST_ID}>
+          {known
+            .filter((name) => !people.includes(name))
+            .map((name) => (
+              <option key={name} value={name} />
+            ))}
+        </datalist>
+      </div>
+    </Field>
+  );
+}
+
 function Body({ task, onClose }: { task: Task; onClose: () => void }) {
   const saveChange = usePlannerStore((state) => state.saveChange);
   const completeTask = usePlannerStore((state) => state.completeTask);
@@ -145,15 +152,7 @@ function Body({ task, onClose }: { task: Task; onClose: () => void }) {
 
   const save = (patch: Partial<Task>) => void saveChange(task.id, patch);
   const done = isFinished(task);
-  const archived = isArchived(task);
   const draft = task.id.startsWith('temp-');
-
-  const changeStage = (stage: Stage | null) => {
-    if (!stage) return;
-    if (stage === 'Done') void completeTask(task.id);
-    // To Do for This Week, as on the board: Doing Tomorrow would move it to Tomorrow.
-    else save({ stage, status: stage === 'This Week' ? 'To Do' : statusForStage(stage) });
-  };
 
   return (
     <>
@@ -197,35 +196,21 @@ function Body({ task, onClose }: { task: Task; onClose: () => void }) {
             ) : null}
           </div>
           <DateField label="Planned day" value={task.plannedDay} onChange={(plannedDay) => save({ plannedDay })} />
-          <PriorityPicker value={task.priority} onChange={(priority) => save({ priority })} />
-          <Select label="Bucket" value={task.bucket} options={BUCKETS} onChange={(bucket) => save({ bucket })} />
         </div>
-
-        <Field label="Next action">
-          <InlineText
-            taskId={task.id}
-            field="nextAction"
-            value={task.nextAction ?? ''}
-            ariaLabel="Next action"
-            placeholder="The next concrete step"
-            multiline
-            rows={2}
-            onCommit={(nextAction) => save({ nextAction })}
-            className={areaClass}
-          />
-        </Field>
+        <PriorityPicker value={task.priority} onChange={(priority) => save({ priority })} />
+        <PeopleField people={task.people ?? []} onChange={(people) => save({ people })} />
 
         <div className="border-t border-line pt-4">
           <StepChecklist task={task} />
         </div>
 
         <div className="border-t border-line pt-4">
-          <Field label="Comments">
+          <Field label="Notes">
             <InlineText
               taskId={task.id}
               field="comments"
               value={task.commentsText ?? ''}
-              ariaLabel="Comments"
+              ariaLabel="Notes"
               multiline
               rows={4}
               onCommit={(commentsText) => save({ commentsText })}
@@ -233,52 +218,6 @@ function Body({ task, onClose }: { task: Task; onClose: () => void }) {
             />
           </Field>
         </div>
-
-        <details className="border-t border-line pt-3">
-          <summary className="py-1.5 text-sm text-muted cursor-pointer">More fields</summary>
-          <div className="mt-3 grid grid-cols-2 gap-3">
-            <Field label="Waiting on">
-              <InlineText
-                taskId={task.id}
-                field="waitingOn"
-                value={task.waitingOn ?? ''}
-                ariaLabel="Waiting on"
-                placeholder="Person or thing"
-                onCommit={(waitingOn) => save({ waitingOn })}
-                className={inputClass}
-              />
-            </Field>
-            <Field label="Urgency">
-              <Toggle label="Urgent" on={!!task.urgent} onChange={(urgent) => save({ urgent })} />
-            </Field>
-            <Select label="Stage" value={task.stage} options={STAGES} onChange={changeStage} allowNone={false} />
-            <Select
-              label="Status"
-              value={task.status}
-              options={STATUSES}
-              allowNone={false}
-              onChange={(status) => {
-                if (status) save({ status });
-              }}
-            />
-            <Select label="Project" value={task.project} options={PROJECTS} onChange={(project) => save({ project })} />
-            <Field label="Importance">
-              <Toggle label="Important" on={!!task.important} onChange={(important) => save({ important })} />
-            </Field>
-            <div className="col-span-2">
-              <Field label="Source">
-                <InlineText
-                  taskId={task.id}
-                  field="source"
-                  value={task.sourceText ?? ''}
-                  ariaLabel="Source"
-                  onCommit={(sourceText) => save({ sourceText })}
-                  className={inputClass}
-                />
-              </Field>
-            </div>
-          </div>
-        </details>
 
         {draft ? null : (
           <a
@@ -310,11 +249,9 @@ function Body({ task, onClose }: { task: Task; onClose: () => void }) {
             </button>
           </>
         ) : done ? (
-          <>
-            <button type="button" onClick={() => void reopenTask(task.id)} className={primaryButton}>
-              Reopen
-            </button>
-          </>
+          <button type="button" onClick={() => void reopenTask(task.id)} className={primaryButton}>
+            Reopen
+          </button>
         ) : (
           <>
             <button type="button" onClick={() => void completeTask(task.id)} className={primaryButton}>

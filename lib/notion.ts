@@ -200,6 +200,10 @@ function taskToNotionProperties(task: Partial<Task>): Record<string, any> {
     properties['Waiting On'] = { rich_text: richTextRequest(task.waitingOn || '') };
   }
 
+  if (task.people !== undefined) {
+    properties.People = { multi_select: task.people.map((name) => ({ name })) };
+  }
+
   if (task.important !== undefined) {
     properties.Important = { checkbox: !!task.important };
   }

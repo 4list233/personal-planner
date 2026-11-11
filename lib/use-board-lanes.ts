@@ -5,21 +5,33 @@ import { usePlannerStore } from './store';
 import { todayInUserTz } from './time';
 import { addDays, BOARD_LANES, selectLanes } from './views';
 
-export function useBoardLanes() {
-  const tasks = usePlannerStore((state) => state.tasks);
-  const setVisibleTaskIds = usePlannerStore((state) => state.setVisibleTaskIds);
-  // Recomputed with each refresh so a tab left open overnight rolls to the new day.
+/** Today and tomorrow, recomputed with each refresh so a tab left open overnight rolls over. */
+export function useToday() {
   const lastFetchedAt = usePlannerStore((state) => state.lastFetchedAt);
   const today = useMemo(() => todayInUserTz(), [lastFetchedAt]); // eslint-disable-line react-hooks/exhaustive-deps
-  const tomorrow = addDays(today, 1);
-  const lanes = useMemo(() => selectLanes(tasks, today, tomorrow), [tasks, today, tomorrow]);
+  return { today, tomorrow: addDays(today, 1) };
+}
 
-  const order = BOARD_LANES.flatMap((lane) => lanes[lane].map((task) => task.id)).join(',');
+export function useLanes() {
+  const tasks = usePlannerStore((state) => state.tasks);
+  const { today, tomorrow } = useToday();
+  const lanes = useMemo(() => selectLanes(tasks, today, tomorrow), [tasks, today, tomorrow]);
+  return { lanes, today, tomorrow };
+}
+
+/** Tells the j/k keyboard shortcuts which cards are on screen, in order. */
+export function useVisibleIds(ids: string[]) {
+  const setVisibleTaskIds = usePlannerStore((state) => state.setVisibleTaskIds);
+  const order = ids.join(',');
   useEffect(() => {
     setVisibleTaskIds(order ? order.split(',') : []);
   }, [order, setVisibleTaskIds]);
+}
 
-  return { lanes, today, tomorrow };
+export function useBoardLanes() {
+  const result = useLanes();
+  useVisibleIds(BOARD_LANES.flatMap((lane) => result.lanes[lane].map((task) => task.id)));
+  return result;
 }
 
 // Matches Tailwind's md breakpoint: below it, five columns can't fit and a

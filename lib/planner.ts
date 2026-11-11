@@ -204,6 +204,12 @@ function richTextPlain(prop: any): string {
   return '';
 }
 
+function multiNames(prop: any): string[] {
+  const options = prop?.multi_select;
+  if (!Array.isArray(options)) return [];
+  return options.map((option) => option?.name).filter((name): name is string => typeof name === 'string' && !!name.trim());
+}
+
 function selectName(prop: any): string | undefined {
   const name = prop?.select?.name;
   return typeof name === 'string' && name.trim() ? name : undefined;
@@ -260,6 +266,7 @@ export function taskFromNotionPage(page: NotionPageLike): Task {
     nextAction: richTextPlain(props['Next Action']) || undefined,
     sourceText: richTextPlain(props.Source) || undefined,
     waitingOn: richTextPlain(props['Waiting On']) || undefined,
+    people: multiNames(props.People),
     important: props.Important?.checkbox === true || props.important?.checkbox === true,
     urgent: props.Urgent?.checkbox === true || props.urgent?.checkbox === true,
     userEmail,

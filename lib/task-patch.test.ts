@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseStepOp, parseTaskPatch } from './task-patch';
+import { cleanPeople, parseStepOp, parseTaskPatch } from './task-patch';
 
 describe('parseTaskPatch', () => {
   it('accepts a normal edit', () => {
@@ -43,5 +43,22 @@ describe('parseStepOp', () => {
     expect(parseStepOp({ type: 'addMilestone', name: 'M' }).ok).toBe(true);
     expect(parseStepOp({ type: 'replaceAll', text: '' }).ok).toBe(false);
     expect(parseStepOp({ type: 'toggle', line: { index: -1, raw: '' }, completed: true }).ok).toBe(false);
+  });
+});
+
+describe('people', () => {
+  it('accepts names, trims them and drops duplicates', () => {
+    expect(parseTaskPatch({ people: [' Noa ', 'Sam', 'Noa'] })).toEqual({ ok: true, value: { people: ['Noa', 'Sam'] } });
+    expect(parseTaskPatch({ people: [] })).toEqual({ ok: true, value: { people: [] } });
+  });
+
+  it('rejects names Notion cannot store', () => {
+    expect(parseTaskPatch({ people: ['Noa, Sam'] }).ok).toBe(false);
+    expect(parseTaskPatch({ people: [''] }).ok).toBe(false);
+    expect(parseTaskPatch({ people: 'Noa' }).ok).toBe(false);
+  });
+
+  it('cleans names on create', () => {
+    expect(cleanPeople([' Noa', 'Noa', 'a,b', 5, ''])).toEqual(['Noa']);
   });
 });

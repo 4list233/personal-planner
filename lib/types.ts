@@ -60,6 +60,8 @@ export interface Task {
   nextAction?: string | null;
   sourceText?: string | null;
   waitingOn?: string | null;
+  /** Notion "People" multi-select: who the task is for or with. */
+  people?: string[];
   lastEditedTime?: string;
   userEmail?: string;
   /** Notion Todos exactly as stored. Steps are parsed from this, never rebuilt. */

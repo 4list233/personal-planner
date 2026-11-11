@@ -9,6 +9,11 @@ import {
   laneOf,
   patchForLane,
   selectLanes,
+  plannedFor,
+  patchForDay,
+  daysFrom,
+  peopleIn,
+  ownerMatches,
 } from './views';
 
 const TODAY = '2026-11-08';
@@ -158,5 +163,60 @@ describe('addDays', () => {
   it('crosses month ends and daylight-saving changes', () => {
     expect(addDays('2026-10-31', 1)).toBe('2026-11-01');
     expect(addDays('2026-11-01', 1)).toBe('2026-11-02');
+  });
+});
+
+describe('week planner', () => {
+  it('reads the day a task is planned for, matching the board', () => {
+    expect(plannedFor(task({ stage: 'Today' }), TODAY, TOMORROW)).toBe(TODAY);
+    expect(plannedFor(task({ status: 'Doing Tomorrow' }), TODAY, TOMORROW)).toBe(TOMORROW);
+    expect(plannedFor(task({ plannedDay: '2026-11-12' }), TODAY, TOMORROW)).toBe('2026-11-12');
+    expect(plannedFor(task({ stage: 'Inbox' }), TODAY, TOMORROW)).toBeNull();
+    expect(plannedFor(task({ status: 'Done', plannedDay: TODAY }), TODAY, TOMORROW)).toBeNull();
+  });
+
+  it('writes a drop on a day so the task shows on that day', () => {
+    const row = task({ stage: 'Today', status: 'Doing Today', plannedDay: TODAY });
+    for (const day of [TODAY, TOMORROW, '2026-11-12', '2026-11-14', '2026-11-20']) {
+      const moved = { ...row, ...patchForDay(row, day, TODAY, TOMORROW) };
+      expect(plannedFor(moved, TODAY, TOMORROW)).toBe(day);
+    }
+  });
+
+  it('never writes Doing Tomorrow for a later day', () => {
+    expect(patchForDay(task({}), '2026-11-12', TODAY, TOMORROW)).toEqual({
+      plannedDay: '2026-11-12',
+      stage: 'This Week',
+      status: 'To Do',
+    });
+    expect(patchForDay(task({}), '2026-11-20', TODAY, TOMORROW).stage).toBe('Inbox');
+  });
+
+  it('lists seven days from a start', () => {
+    expect(daysFrom(TODAY)).toEqual([
+      '2026-11-08', '2026-11-09', '2026-11-10', '2026-11-11', '2026-11-12', '2026-11-13', '2026-11-14',
+    ]);
+  });
+});
+
+describe('people', () => {
+  it('counts open tasks per person, busiest first', () => {
+    expect(
+      peopleIn([
+        task({ title: 'a', people: ['Noa', 'Sam'] }),
+        task({ title: 'b', people: ['Noa'] }),
+        task({ title: 'c', people: ['Sam'], status: 'Done' }),
+      ])
+    ).toEqual([
+      { name: 'Noa', open: 2 },
+      { name: 'Sam', open: 1 },
+    ]);
+  });
+
+  it('matches a subtask owner by full or first name', () => {
+    expect(ownerMatches('Noa', 'Noa Levi')).toBe(true);
+    expect(ownerMatches('noa levi', 'Noa Levi')).toBe(true);
+    expect(ownerMatches('Sam', 'Noa Levi')).toBe(false);
+    expect(ownerMatches(undefined, 'Noa')).toBe(false);
   });
 });

@@ -35,8 +35,13 @@ function TaskCard({ task, dragging = false }: { task: Task; dragging?: boolean }
   const due = dueLabel(task, done);
   const percent = progress.total === 0 ? 0 : Math.round((progress.done / progress.total) * 100);
   const next = done ? null : progress.next || task.nextAction;
-  const waiting = task.waitingOn ? `Waiting on ${task.waitingOn}` : task.stage === 'Waiting' ? 'Waiting' : null;
-  const hasMeta = task.priority || task.urgent || due || waiting;
+  // People replace Waiting On on the card; old rows that only have Waiting On still show it.
+  const waiting = task.people?.length
+    ? `With ${task.people.join(', ')}`
+    : task.waitingOn
+      ? `Waiting on ${task.waitingOn}`
+      : null;
+  const hasMeta = task.priority || due || waiting;
 
   return (
     <div
@@ -89,7 +94,6 @@ function TaskCard({ task, dragging = false }: { task: Task; dragging?: boolean }
               {task.priority}
             </span>
           ) : null}
-          {task.urgent ? <span className="font-semibold text-late">Urgent</span> : null}
           {due ? <span className={due.late ? 'font-semibold text-late' : ''}>{due.text}</span> : null}
           {waiting ? <span>{waiting}</span> : null}
         </div>
