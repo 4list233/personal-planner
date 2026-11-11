@@ -108,6 +108,8 @@ export async function POST(request: NextRequest) {
       daysUntilDue: 0,
       todoItems: Array.isArray(body.todoItems) ? body.todoItems : [],
       comments: Array.isArray(body.comments) ? body.comments : [],
+      todosText: typeof body.todosText === 'string' ? body.todosText : undefined,
+      commentsText: typeof body.commentsText === 'string' ? body.commentsText : undefined,
       nextAction: typeof body.nextAction === 'string' ? body.nextAction : undefined,
       sourceText: typeof body.sourceText === 'string' ? body.sourceText : undefined,
       waitingOn: typeof body.waitingOn === 'string' ? body.waitingOn : undefined,

@@ -140,7 +140,10 @@ interface PlannerStore {
   updateTask: (id: string, updates: Partial<Task>) => void;
   /** Removes an unsaved local draft. Never touches Notion. */
   discardDraft: (id: string) => void;
-  submitTask: (id: string) => Promise<void>;
+  /** Saves a draft to Notion. True once Notion has the row. */
+  submitTask: (id: string) => Promise<boolean>;
+  /** Opens the task panel on a blank, unsaved task. Nothing reaches Notion until it is saved. */
+  startDraft: () => string;
   /** Creates a row from a title, in Inbox unless `placement` puts it elsewhere. */
   addQuickTask: (title: string, placement?: Partial<Task>) => Promise<void>;
   /** Apply a change on screen, write it to Notion, undo it on screen if that fails. */
@@ -432,9 +435,13 @@ export const usePlannerStore = create<PlannerStore>((set, get) => ({
   submitTask: async (id) => {
     // Only drafts are submitted whole. Existing rows save field by field, so a
     // save can't overwrite what the planner bot wrote since the page loaded.
-    if (!id.startsWith('temp-')) return;
+    if (!id.startsWith('temp-')) return false;
     const task = get().tasks.find((t) => t.id === id);
-    if (!task) return;
+    if (!task) return false;
+    if (!task.title.trim()) {
+      toast.error('Give the task a title first.');
+      return false;
+    }
 
     setPendingSync(id, true);
     try {
@@ -454,6 +461,9 @@ export const usePlannerStore = create<PlannerStore>((set, get) => ({
           weekday: task.weekday,
           todoItems: task.todoItems || [],
           comments: task.comments || [],
+          // The panel edits subtasks and notes as text, so send that when present.
+          todosText: task.todosText,
+          commentsText: task.commentsText,
           nextAction: task.nextAction,
           sourceText: task.sourceText,
           waitingOn: task.waitingOn,
@@ -463,21 +473,39 @@ export const usePlannerStore = create<PlannerStore>((set, get) => ({
         }),
       }, retryOnlyIfRefused, false);
       if (!result.ok) {
-        showSaveError(task.title, () => get().submitTask(id), result.failure.status);
+        showSaveError(task.title, () => void get().submitTask(id), result.failure.status);
         setPendingSync(id, false);
-        return;
+        return false;
       }
       const created = result.data.task as Task;
       replaceRow(id, created);
       markSaved(created.id);
+      // Keep the panel on the task now that it has its Notion id.
+      if (get().detailTaskId === id) get().openDetail(created.id);
+      return true;
     } catch (e) {
       console.error('Failed to submit task:', e);
       toast.error(`Couldn't save '${task.title}'. Retry?`, {
         label: 'Retry',
-        onClick: () => get().submitTask(id),
+        onClick: () => void get().submitTask(id),
       });
       setPendingSync(id, false);
+      return false;
     }
+  },
+  startDraft: () => {
+    const id = `temp-${Date.now()}`;
+    get().addTask({
+      id,
+      title: '',
+      dateCreated: new Date().toISOString(),
+      status: 'To Do',
+      stage: 'Inbox',
+      weekday: 'No Weekdays',
+      todoItems: [],
+    });
+    get().openDetail(id);
+    return id;
   },
   addQuickTask: async (title, placement = {}) => {
     const id = `temp-${Date.now()}`;
@@ -572,6 +600,8 @@ export const usePlannerStore = create<PlannerStore>((set, get) => ({
       return;
     }
     get().updateTask(id, { todosText: next });
+    // A draft's subtasks go to Notion with the rest of it on save.
+    if (id.startsWith('temp-')) return;
     const failure = await sendWrite(id, `/api/tasks/${id}/steps`, 'POST', op, task, false);
     if (!failure) return;
     if (failure.status === 409) {
@@ -598,13 +628,22 @@ export const usePlannerStore = create<PlannerStore>((set, get) => ({
   // underneath and lose its scroll position, filters and tab.
   openDetail: (id) => {
     set({ detailTaskId: id, focusedTaskId: id });
-    if (typeof window === 'undefined') return;
+    // A draft has no Notion row yet, so a link to it would lead nowhere.
+    if (typeof window === 'undefined' || id.startsWith('temp-')) return;
     const url = new URL(window.location.href);
     url.searchParams.set('task', id);
     window.history.pushState({}, '', url);
   },
   closeDetail: () => {
+    const open = get().detailTaskId;
+    const draft = open?.startsWith('temp-') ? get().tasks.find((t) => t.id === open) : undefined;
     set({ detailTaskId: null, editing: null });
+    // Closing a new task keeps what was typed: a titled draft is saved, a blank
+    // one is dropped, so no unsaved card is left looking like a real task.
+    if (draft) {
+      if (draft.title.trim()) void get().submitTask(draft.id);
+      else get().discardDraft(draft.id);
+    }
     if (typeof window === 'undefined') return;
     const url = new URL(window.location.href);
     url.searchParams.delete('task');
